@@ -1,0 +1,13 @@
+
+{
+  "name": "kairos-assistant",
+  "version": "1.0.0",
+  "description": "Kairos - Kind AI Scheduling Assistant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

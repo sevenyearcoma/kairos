@@ -1,0 +1,78 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kairos - Kind AI Scheduling Assistant</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@200;400;600;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    // Shim process.env for the browser context to support Gemini API initialization
+    window.process = {
+      env: {
+        API_KEY: "" // Will be injected or accessible if provided by the environment
+      }
+    };
+    
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            "cream": "#FDFCF7",
+            "charcoal": "#1A1A1A",
+            "emerald-muted": "#4B7C68",
+            "primary": "#11d4b4",
+            "beige-soft": "#fdfaf3",
+          },
+          fontFamily: {
+            sans: ["Inter", "sans-serif"],
+            display: ["Manrope", "sans-serif"],
+          },
+        },
+      },
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer base {
+      body {
+        @apply bg-cream text-charcoal font-sans antialiased;
+      }
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+    .ios-blur {
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    @keyframes pulse-gentle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .animate-pulse-gentle {
+      animation: pulse-gentle 3s infinite ease-in-out;
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

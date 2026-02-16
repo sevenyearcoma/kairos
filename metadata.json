@@ -1,0 +1,7 @@
+{
+  "name": "Kairos - Kind AI Responsible for Organizing Schedule",
+  "description": "A minimalist, premium scheduling assistant that helps you manage your time with kindness. Features AI-powered chat, a detailed calendar, task management, and a deep-work focus mode.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
