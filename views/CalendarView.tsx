@@ -21,8 +21,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, isGoogleConnected 
 }) => {
   const t = useMemo(() => getT(language), [language]);
-  const [viewDate, setViewDate] = useState(new Date(2026, 1, 17)); // Feb 17, 2026
-  const [selectedDateStr, setSelectedDateStr] = useState("2026-02-17");
+  const [viewDate, setViewDate] = useState(new Date()); 
+  const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Event | Task | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -53,10 +53,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
   const handleSync = () => {
     setIsSyncing(true);
+    onSyncGoogle();
+    // Simulate end of sync visual
     setTimeout(() => {
-      onSyncGoogle();
       setIsSyncing(false);
-    }, 1200);
+    }, 1500);
   };
 
   const handleQuickAddSubmit = () => {
@@ -261,6 +262,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                               </p>
                               {event.recurrence && event.recurrence !== 'none' && (
                                 <span className="material-symbols-outlined text-[14px] text-charcoal/20">sync</span>
+                              )}
+                              {event.source === 'google' && (
+                                <span className="material-symbols-outlined text-[14px] text-primary">cloud</span>
                               )}
                             </div>
                             <h3 className="text-lg font-display font-bold text-charcoal leading-tight">{event.title}</h3>
