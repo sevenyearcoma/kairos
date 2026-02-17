@@ -56,6 +56,12 @@ const App: React.FC = () => {
     return !!localStorage.getItem('kairos_google_token');
   });
 
+  // Fallback to first available chat if activeChatId is invalid or not found
+  const activeChat = useMemo(() => {
+    if (!chats.length) return null;
+    return chats.find(c => c.id === activeChatId) || chats[0];
+  }, [chats, activeChatId]);
+
   const location = useLocation();
   const tokenClient = useRef<any>(null);
 
@@ -85,56 +91,6 @@ const App: React.FC = () => {
     setMemory(prev => [item, ...prev].slice(0, 100));
   }, []);
 
-  useEffect(() => {
-    const checkForEveningSummary = async () => {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const lastSummaryDate = localStorage.getItem('kairos_last_summary_date');
-      if (currentHour >= 21 && lastSummaryDate !== TODAY) {
-        localStorage.setItem('kairos_last_summary_date', TODAY);
-        const completedTasks = tasks.filter(tk => tk.completed && isItemOnDate(tk, TODAY));
-        const pendingTasks = tasks.filter(tk => !tk.completed && isItemOnDate(tk, TODAY));
-        const todaysEvents = events.filter(ev => isItemOnDate(ev, TODAY));
-        try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: `Generate an evening summary for the user. 
-            Completed: ${completedTasks.map(t => t.title).join(', ')}.
-            Missed: ${pendingTasks.map(t => t.title).join(', ')}.
-            Events: ${todaysEvents.map(e => e.title).join(', ')}.
-            Language: ${language}. Be kind, reflective, and help them wind down.`,
-            config: { systemInstruction: "You are Kairos. Create a warm evening summary." }
-          });
-          const summaryText = response.text || "I hope you had a productive day. Let's rest now.";
-          const newChatId = Date.now().toString();
-          setChats(prev => [{ id: newChatId, title: language === 'en' ? 'Evening Summary' : 'Вечерний итог', messages: [{ id: 'summary-1', role: 'assistant', content: summaryText }], createdAt: Date.now() }, ...prev]);
-          setActiveChatId(newChatId);
-          try {
-            const embedRes = await ai.models.embedContent({ 
-              model: 'gemini-embedding-001', 
-              content: { parts: [{ text: `Summary (${TODAY}): ${summaryText}` }] } 
-            });
-            if (embedRes.embedding?.values) {
-              handleAddMemoryItem({ 
-                text: `On ${TODAY}, I summarized: ${summaryText.substring(0, 100)}...`, 
-                embedding: embedRes.embedding.values, 
-                timestamp: Date.now() 
-              });
-            }
-          } catch (e) {
-            console.error("Summary embedding error", e);
-          }
-        } catch (error) {
-          console.error("Evening summary generation error", error);
-        }
-      }
-    };
-    const interval = setInterval(checkForEveningSummary, 60000);
-    checkForEveningSummary();
-    return () => clearInterval(interval);
-  }, [TODAY, tasks, events, language, handleAddMemoryItem]);
-
   const fetchGoogleEvents = async (token: string) => {
     try {
       const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' + new Date().toISOString(), { headers: { 'Authorization': `Bearer ${token}` } });
@@ -146,8 +102,8 @@ const App: React.FC = () => {
           externalId: item.id,
           title: item.summary || 'Untitled Event',
           date: item.start?.date || item.start?.dateTime?.split('T')[0] || TODAY,
-          startTime: item.start?.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day',
-          endTime: item.end?.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day',
+          startTime: item.start?.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM',
+          endTime: item.end?.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '11:00 AM',
           location: item.location || '',
           type: 'meeting',
           source: 'google',
@@ -155,7 +111,6 @@ const App: React.FC = () => {
         }));
         setEvents(prev => {
           const nonGoogle = prev.filter(e => e.source !== 'google');
-          // Deduplicate by external ID if any local items were actually already pushed to Google
           return [...nonGoogle, ...googleEvents];
         });
       }
@@ -172,15 +127,29 @@ const App: React.FC = () => {
     if (!token) return;
 
     try {
-      // Basic logic to convert 10:00 AM to 24h for Google API
       const convertTime = (dateStr: string, timeStr: string) => {
-        if (timeStr === 'All Day') return { date: dateStr };
+        if (!timeStr || timeStr === 'All Day') return { date: dateStr };
         const [time, modifier] = timeStr.split(' ');
         let [hours, minutes] = time.split(':');
-        if (hours === '12') hours = '00';
-        if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString();
-        return { dateTime: `${dateStr}T${hours.padStart(2, '0')}:${minutes}:00Z` }; // Using Z for simple UTC, adjust as needed
+        let h = parseInt(hours, 10);
+        if (modifier === 'PM' && h < 12) h += 12;
+        if (modifier === 'AM' && h === 12) h = 0;
+        return { dateTime: `${dateStr}T${h.toString().padStart(2, '0')}:${minutes}:00Z`, timeZone: 'UTC' };
       };
+
+      let recurrenceRule: string[] | undefined;
+      if (event.recurrence && event.recurrence !== 'none') {
+        let rule = 'RRULE:FREQ=';
+        if (event.recurrence === 'daily') rule += 'DAILY';
+        else if (event.recurrence === 'weekly') rule += 'WEEKLY';
+        else if (event.recurrence === 'weekdays') rule += 'WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+        else if (event.recurrence === 'monthly') rule += 'MONTHLY';
+        else if (event.recurrence === 'specific_days' && event.daysOfWeek) {
+          const daysMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+          rule += `WEEKLY;BYDAY=${event.daysOfWeek.map(d => daysMap[d]).join(',')}`;
+        }
+        recurrenceRule = [rule];
+      }
 
       const googleEventResource = {
         summary: event.title,
@@ -188,6 +157,7 @@ const App: React.FC = () => {
         description: event.description,
         start: convertTime(event.date, event.startTime),
         end: convertTime(event.date, event.endTime),
+        recurrence: recurrenceRule
       };
 
       const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
@@ -216,13 +186,9 @@ const App: React.FC = () => {
         // @ts-ignore
         tokenClient.current = google.accounts.oauth2.initTokenClient({
           client_id: '1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com',
-          // Scope changed to full calendar access for adding events
           scope: 'https://www.googleapis.com/auth/calendar',
           callback: async (response: any) => {
-            if (response.error) {
-              console.error("Google Auth Error:", response);
-              return;
-            }
+            if (response.error) return;
             localStorage.setItem('kairos_google_token', response.access_token);
             setIsGoogleConnected(true);
             await fetchGoogleEvents(response.access_token);
@@ -230,7 +196,6 @@ const App: React.FC = () => {
         });
       }
     };
-
     const checkInterval = setInterval(() => {
       // @ts-ignore
       if (typeof google !== 'undefined' && google.accounts) {
@@ -238,28 +203,14 @@ const App: React.FC = () => {
         clearInterval(checkInterval);
       }
     }, 1000);
-
     return () => clearInterval(checkInterval);
   }, []);
 
   const handleSyncGoogle = useCallback(() => {
     const token = localStorage.getItem('kairos_google_token');
-    if (token) {
-      fetchGoogleEvents(token);
-    } else if (tokenClient.current) {
-      tokenClient.current.requestAccessToken(); 
-    }
+    if (token) fetchGoogleEvents(token);
+    else if (tokenClient.current) tokenClient.current.requestAccessToken(); 
   }, []);
-
-  useEffect(() => {
-    if (chats.length === 0) {
-      const initialId = Date.now().toString();
-      setChats([{ id: initialId, title: language === 'en' ? 'Morning Briefing' : 'Утренний брифинг', messages: [{ id: '1', role: 'assistant', content: t.chat.initialMsg }], createdAt: Date.now() }]);
-      setActiveChatId(initialId);
-    }
-  }, [language, t.chat.initialMsg]);
-
-  const activeChat = useMemo(() => chats.find(c => c.id === activeChatId) || chats[0], [chats, activeChatId]);
 
   const handleAddEvent = async (event: Partial<Event>) => {
     const newId = Date.now().toString();
@@ -267,21 +218,16 @@ const App: React.FC = () => {
       id: newId,
       title: event.title || 'Untitled',
       date: event.date || TODAY,
-      startTime: event.startTime || '09:00 AM',
-      endTime: event.endTime || '10:00 AM',
+      startTime: event.startTime || '10:00 AM',
+      endTime: event.endTime || '11:00 AM',
       type: event.type || 'work',
       source: 'local',
       ...event
     };
-    
-    // Add locally first
     setEvents(prev => [...prev, newEvent]);
-
-    // If Google is connected, try to push it to Google Calendar
     if (isGoogleConnected) {
       const externalId = await createGoogleEvent(newEvent);
       if (externalId) {
-        // Update the event with its Google ID so we can sync it properly
         setEvents(prev => prev.map(e => e.id === newId ? { ...e, externalId, source: 'google' } : e));
       }
     }
@@ -309,7 +255,8 @@ const App: React.FC = () => {
 
   const handleNewChat = () => {
     const newId = Date.now().toString();
-    setChats(prev => [{ id: newId, title: language === 'en' ? 'New Conversation' : 'Новый разговор', messages: [], createdAt: Date.now() }, ...prev]);
+    const initialMsg = language === 'ru' ? "Привет! Я готов помочь тебе организовать дела. Что запланируем?" : "Hello! I'm here to help you organize your life. What's on your mind?";
+    setChats(prev => [{ id: newId, title: language === 'en' ? 'New Conversation' : 'Новый разговор', messages: [{ id: Date.now().toString(), role: 'assistant', content: initialMsg }], createdAt: Date.now() }, ...prev]);
     setActiveChatId(newId);
   };
 
@@ -318,9 +265,14 @@ const App: React.FC = () => {
     if (activeChatId === id) setActiveChatId('');
   };
 
+  useEffect(() => {
+    if (chats.length === 0) {
+      handleNewChat();
+    }
+  }, []);
+
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
-      {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-72 border-r border-charcoal/5 bg-white/50 sticky top-0 h-screen p-8 shrink-0 overflow-y-auto scrollbar-hide">
         <div className="flex items-center gap-3 mb-12">
           <div className="size-10 bg-charcoal rounded-xl flex items-center justify-center text-primary shadow-2xl">
@@ -348,7 +300,6 @@ const App: React.FC = () => {
         </nav>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col relative bg-white/30 h-screen overflow-hidden">
         <header className="h-20 border-b border-charcoal/5 flex items-center px-6 md:px-10 justify-between bg-white/80 backdrop-blur-xl sticky top-0 z-40 shrink-0">
            <div className="flex items-center gap-4">
@@ -371,7 +322,7 @@ const App: React.FC = () => {
           <div className="max-w-6xl mx-auto h-full">
             <Routes>
               <Route path="/" element={
-                activeChat && <ChatView 
+                activeChat ? <ChatView 
                   activeChat={activeChat} 
                   chats={chats}
                   personality={personality}
@@ -389,7 +340,7 @@ const App: React.FC = () => {
                   onBulkReschedule={() => {}}
                   onAddMemory={handleAddMemoryItem}
                   onSetSynced={handleSetMessageSynced}
-                />
+                /> : <div className="flex items-center justify-center h-full text-charcoal/20 uppercase font-black tracking-widest">Initializing...</div>
               } />
               <Route path="/calendar" element={
                 <CalendarView 

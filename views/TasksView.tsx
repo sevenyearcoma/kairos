@@ -25,10 +25,13 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
   const [feedback, setFeedback] = useState<{ message: string; visible: boolean } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  const TODAY = "2026-02-17";
-  const TOMORROW = "2026-02-18";
+  const TODAY = new Date().toISOString().split('T')[0];
+  const TOMORROW_DATE = new Date();
+  TOMORROW_DATE.setDate(TOMORROW_DATE.getDate() + 1);
+  const TOMORROW = TOMORROW_DATE.toISOString().split('T')[0];
 
   const groupedTasks = useMemo(() => {
+    const routines: Task[] = [];
     const today: Task[] = [];
     const tomorrow: Task[] = [];
     const later: Task[] = [];
@@ -40,6 +43,13 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
         completed.push(t);
       } else if (t.failed) {
         failed.push(t);
+      } else if (t.recurrence && t.recurrence !== 'none') {
+        // Routines are shown in their own section regardless of specific date match
+        // but they also appear in 'today' if they occur today
+        routines.push(t);
+        if (isItemOnDate(t, TODAY)) {
+          today.push(t);
+        }
       } else if (isItemOnDate(t, TODAY)) {
         today.push(t);
       } else if (isItemOnDate(t, TOMORROW)) {
@@ -49,7 +59,11 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       }
     });
 
-    return { today, tomorrow, later, completed, failed };
+    // Remove duplicates from today if they are in routines (we show them in both for clarity or just one?)
+    // Let's keep them separated: Routines vs One-offs
+    const todayOneOffs = today.filter(t => !t.recurrence || t.recurrence === 'none');
+
+    return { routines, todayOneOffs, tomorrow, later, completed, failed };
   }, [tasks, TODAY, TOMORROW]);
 
   useEffect(() => {
@@ -141,7 +155,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
              {task.title}
            </h3>
            {task.recurrence && task.recurrence !== 'none' && (
-             <span className="material-symbols-outlined text-[14px] text-charcoal/20">sync</span>
+             <span className="material-symbols-outlined text-[14px] text-primary/40">sync</span>
            )}
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -255,15 +269,30 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       )}
 
       <div className="space-y-10">
+        {/* RECURRING ROUTINES SECTION */}
+        {groupedTasks.routines.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xs font-extrabold uppercase tracking-widest text-primary/60">
+                {t.tasks.routines}
+              </h2>
+              <div className="flex-1 h-[1px] bg-primary/10"></div>
+            </div>
+            <div className="grid lg:grid-cols-2 gap-3">
+              {groupedTasks.routines.map(renderTask)}
+            </div>
+          </section>
+        )}
+
         <section className="space-y-4">
           <div className="flex items-center gap-3">
             <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-              {t.tasks.today} • {new Date(TODAY).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })}
+              {t.tasks.oneOffs} • {t.tasks.today}
             </h2>
             <div className="flex-1 h-[1px] bg-charcoal/5"></div>
           </div>
           <div className="grid gap-3">
-            {groupedTasks.today.length > 0 ? groupedTasks.today.map(renderTask) : (
+            {groupedTasks.todayOneOffs.length > 0 ? groupedTasks.todayOneOffs.map(renderTask) : (
               <div className="py-8 text-center border-2 border-dashed border-charcoal/5 rounded-[2rem]">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-charcoal/20">{t.tasks.noTasks}</p>
               </div>
@@ -275,7 +304,7 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
           <section className="space-y-4">
             <div className="flex items-center gap-3">
               <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-                {t.tasks.tomorrow} • {new Date(TOMORROW).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })}
+                {t.tasks.tomorrow}
               </h2>
               <div className="flex-1 h-[1px] bg-charcoal/5"></div>
             </div>

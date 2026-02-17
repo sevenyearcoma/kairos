@@ -5,7 +5,6 @@ import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryIte
 import ItemDetailModal from '../components/ItemDetailModal';
 import { getT } from '../translations';
 
-// Utility for Vector Similarity
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
   if (!vecA || !vecB) return 0;
   let dotProduct = 0;
@@ -63,7 +62,6 @@ const ChatView: React.FC<ChatViewProps> = ({
     const lowercase = text.toLowerCase();
     const searchKeywords = ['news', 'weather', 'latest', 'today', 'price', 'who is', 'current', 'новости', 'погода', 'цена', 'кто такой'];
     const proKeywords = ['advice', 'think', 'explain', 'philosophy', 'complex', 'how to', 'совет', 'подумай', 'объясни', 'почему'];
-    
     if (searchKeywords.some(k => lowercase.includes(k))) return { model: 'gemini-3-flash-preview', search: true };
     if (proKeywords.some(k => lowercase.includes(k))) return { model: 'gemini-3-pro-preview', search: false };
     return { model: 'gemini-3-flash-preview', search: false };
@@ -72,21 +70,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   const handleSyncDraft = (msgId: string, type: 'event' | 'task', data: any) => {
     const msg = messages.find(m => m.id === msgId);
     if (msg?.isSynced) return;
-
     if (type === 'event') {
       onAddEvent(data);
     } else {
-      onAddTask(
-        data.title, 
-        data.category || 'Personal', 
-        data.date || TODAY, 
-        undefined, 
-        data.recurrence, 
-        data.estimatedMinutes,
-        data.daysOfWeek
-      );
+      onAddTask(data.title, data.category || 'Personal', data.date || TODAY, data.description, data.recurrence, data.estimatedMinutes, data.daysOfWeek);
     }
-
     onSetSynced(activeChat.id, msgId);
   };
 
@@ -98,13 +86,9 @@ const ChatView: React.FC<ChatViewProps> = ({
         contents: { parts: [{ text: `Create a serene, high-quality, aesthetic 16:9 illustration of: ${prompt}. Professional soft lighting, minimal colors, Kairos assistant style.` }] }
       });
       for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        }
+        if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
-    } catch (e) {
-      console.error("Image generation failed", e);
-    }
+    } catch (e) { console.error("Image generation failed", e); }
     return null;
   };
 
@@ -114,54 +98,40 @@ const ChatView: React.FC<ChatViewProps> = ({
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
     const updatedMessages = [...messages, userMsg];
     onUpdateMessages(activeChat.id, updatedMessages);
-    
     setInput('');
     setIsTyping(true);
-
     const { model, search } = detectIntentAndRoute(userText);
     setActiveModel(model);
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          // Fix: Use 'gemini-embedding-001', property 'content', and response 'embedding'
-          const queryEmbeddingResult = await ai.models.embedContent({
-            model: 'gemini-embedding-001',
-            content: { parts: [{ text: userText }] }
-          });
-          if (queryEmbeddingResult.embedding?.values) {
-            const queryVector = queryEmbeddingResult.embedding.values;
-            const scoredMemories = memory.map(item => ({
-              text: item.text,
-              score: cosineSimilarity(queryVector, item.embedding)
-            })).sort((a, b) => b.score - a.score);
+          // Fixed embedContent parameters: changed 'content' to 'contents' and 'embedding' to 'embeddings' per SDK types
+          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: userText }] } });
+          if (queryEmbeddingResult.embeddings?.values) {
+            const queryVector = queryEmbeddingResult.embeddings.values;
+            const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
             retrievedMemories = scoredMemories.filter(m => m.score > 0.45).slice(0, 5).map(m => m.text);
           }
-        } catch (embedError) {
-          console.warn("Memory retrieval failed", embedError);
-        }
+        } catch (e) { console.warn("Memory retrieval failed", e); }
       }
 
       const stats = `Burnout=${personality.burnoutRisk}%, Efficiency=${personality.efficiency}%`;
-      const relevantFacts = retrievedMemories.length > 0 ? `Recalled: ${retrievedMemories.join('; ')}` : "No prior history.";
-      const scheduleContext = `Today: ${TODAY}. 
-      Tasks Today: ${tasks.filter(t => t.date === TODAY).map(t => t.title).join(', ')}.
-      Active Routines: ${tasks.filter(t => t.recurrence !== 'none').map(t => `${t.title} (${t.recurrence})`).join(', ')}.`;
+      const scheduleContext = `Today: ${TODAY}. Current Schedule contains: ${events.length} events and ${tasks.length} tasks.`;
 
-      const systemInstruction = `You are Kairos, a sophisticated scheduling assistant.
-      Current Context: ${stats} | ${relevantFacts}
-      Schedule Status: ${scheduleContext}
-      Language: ${language}.
+      const systemInstruction = `You are Kairos, a high-precision, kind scheduling assistant. 
+      STRICT RULE: OUTPUT ONLY RAW VALID JSON. NEVER repeat the same word or description in the JSON fields.
       
-      STRICT RULES:
-      1. OUTPUT MUST BE JSON.
-      2. The 'reply' field is your response to the user.
-      3. For RECURRING tasks, use intent="create_task".
-      4. If user wants to see something or you want to visualize a goal/mood, use intent="generate_image" and provide 'imagePrompt'.
-      5. Extract facts into 'newFact'.`;
+      RECURRENCE LOGIC:
+      - NEVER create multiple tasks for a routine (e.g., if user says "gym every Mon/Wed", create ONE task with recurrence:"specific_days" and daysOfWeek:[1, 3]).
+      - DO NOT manually generate tasks for each day.
+      - "create_event": For specific calendar entries (meetings, appointments).
+      - "create_task": For habits, rituals, or general to-do list items.
+      - If a user mentions a habit (e.g., "meditate every morning"), use intent "create_task", recurrence "daily", and set starting date as today.
+      
+      Language: ${language}. Context: ${stats} | ${retrievedMemories.join('; ')} | ${scheduleContext}`;
 
       const response = await ai.models.generateContent({
         model: model as any,
@@ -190,9 +160,11 @@ const ChatView: React.FC<ChatViewProps> = ({
                   title: { type: Type.STRING },
                   date: { type: Type.STRING },
                   category: { type: Type.STRING },
+                  description: { type: Type.STRING },
                   recurrence: { type: Type.STRING, enum: ["none", "daily", "weekly", "monthly", "weekdays", "specific_days"] },
                   daysOfWeek: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-                  estimatedMinutes: { type: Type.NUMBER }
+                  startTime: { type: Type.STRING },
+                  endTime: { type: Type.STRING }
                 }
               }
             },
@@ -201,7 +173,10 @@ const ChatView: React.FC<ChatViewProps> = ({
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
+      let rawText = response.text || "{}";
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : "{}";
+      const result = JSON.parse(jsonStr);
       
       let generatedImgUrl: string | undefined;
       if (result.intent === 'generate_image' && result.imagePrompt) {
@@ -210,33 +185,19 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       let finalContent = result.reply;
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks && chunks.length > 0) {
-        const sources = chunks
-          .filter(c => c.web)
-          .map(c => `[${c.web.title}](${c.web.uri})`)
-          .join('\n');
-        if (sources) {
-          finalContent += `\n\n**Sources:**\n${sources}`;
-        }
+      if (chunks) {
+        const sources = chunks.filter(c => c.web).map(c => `[${c.web.title}](${c.web.uri})`).join('\n');
+        if (sources) finalContent += `\n\n**Sources:**\n${sources}`;
       }
 
       if (result.newFact) {
         try {
-          // Fix: Use 'gemini-embedding-001', property 'content', and response 'embedding'
-          const embeddingResult = await ai.models.embedContent({
-            model: 'gemini-embedding-001',
-            content: { parts: [{ text: result.newFact }] }
-          });
-          if (embeddingResult.embedding?.values) {
-            onAddMemory({
-              text: result.newFact,
-              embedding: embeddingResult.embedding.values,
-              timestamp: Date.now()
-            });
+          // Fixed embedContent parameters: changed 'content' to 'contents' and 'embedding' to 'embeddings' per SDK types
+          const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: result.newFact }] } });
+          if (embeddingResult.embeddings?.values) {
+            onAddMemory({ text: result.newFact, embedding: embeddingResult.embeddings.values, timestamp: Date.now() });
           }
-        } catch (e) {
-          console.warn("Indexing fact failed", e);
-        }
+        } catch (e) { console.warn("Indexing fact failed", e); }
       }
 
       const aiMsg: ChatMessage = { 
@@ -248,25 +209,16 @@ const ChatView: React.FC<ChatViewProps> = ({
         draftEvent: result.intent === 'create_event' ? { ...result.details, type: 'work' } : undefined,
         draftTask: result.intent === 'create_task' ? { ...result.details } : undefined,
       };
-
       onUpdateMessages(activeChat.id, [...updatedMessages, aiMsg]);
     } catch (e) { 
       console.error("Gemini API Error:", e);
-      onUpdateMessages(activeChat.id, [...updatedMessages, { 
-        id: Date.now().toString(), 
-        role: 'assistant', 
-        content: language === 'ru' ? "Простите, мои системы временно недоступны. Пожалуйста, попробуйте снова." : "Apologies, my systems are temporarily unreachable. Please try again." 
-      }]);
-    } finally { 
-      setIsTyping(false); 
-      setActiveModel(null);
-    }
+      onUpdateMessages(activeChat.id, [...updatedMessages, { id: Date.now().toString(), role: 'assistant', content: "Error communicating with my core systems." }]);
+    } finally { setIsTyping(false); setActiveModel(null); }
   };
 
   const renderMarkdown = (text: string) => {
     const imgRegex = /!\[([^\]]*)\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
     const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-    
     return text.split('\n').map((line, i) => {
       const imgMatch = imgRegex.exec(line);
       if (imgMatch) {
@@ -280,7 +232,6 @@ const ChatView: React.FC<ChatViewProps> = ({
           </div>
         );
       }
-
       const parts = line.split(linkRegex);
       if (parts.length === 1) return <p key={i} className="mb-1">{line}</p>;
       const elements = [];
@@ -300,9 +251,7 @@ const ChatView: React.FC<ChatViewProps> = ({
           {messages.map((msg) => (
             <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[85%] p-5 rounded-3xl text-[14px] leading-relaxed ${msg.role === 'user' ? 'bg-charcoal text-white rounded-tr-none' : 'bg-white border border-charcoal/10 text-charcoal rounded-tl-none shadow-sm'}`}>
-                <div className="whitespace-pre-wrap">
-                  {msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
-                </div>
+                <div className="whitespace-pre-wrap">{msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}</div>
                 {msg.kairosInsight && (
                   <div className={`mt-4 p-4 rounded-2xl flex items-start gap-3 border animate-in slide-in-from-left-4 ${msg.kairosInsight.type === 'warning' ? 'bg-red-50 border-red-100' : 'bg-primary/5 border-primary/20'}`}>
                     <span className={`material-symbols-outlined text-[18px] ${msg.kairosInsight.type === 'warning' ? 'text-red-400' : 'text-primary'}`}>{msg.kairosInsight.type === 'warning' ? 'warning' : 'tips_and_updates'}</span>
@@ -314,53 +263,35 @@ const ChatView: React.FC<ChatViewProps> = ({
                 )}
                 {msg.draftEvent && (
                   <div className="mt-4 p-4 bg-charcoal text-cream rounded-2xl space-y-3 border border-primary/20">
-                    <p className="text-[10px] font-bold text-primary uppercase">{t.chat.recommendation}</p>
+                    <div className="flex justify-between items-start">
+                      <p className="text-[10px] font-bold text-primary uppercase">{t.chat.recommendation}</p>
+                      {msg.draftEvent.recurrence && msg.draftEvent.recurrence !== 'none' && <span className="material-symbols-outlined text-[14px]">sync</span>}
+                    </div>
                     <h4 className="font-bold">{msg.draftEvent.title}</h4>
-                    <p className="text-[10px] text-white/50">{msg.draftEvent.date}</p>
-                    <button 
-                      onClick={() => handleSyncDraft(msg.id, 'event', msg.draftEvent)} 
-                      disabled={msg.isSynced}
-                      className={`w-full py-2 text-[10px] font-black uppercase rounded-lg shadow-lg active:scale-95 transition-all ${msg.isSynced ? 'bg-charcoal/10 text-charcoal/30 cursor-not-allowed' : 'bg-primary text-charcoal'}`}
-                    >
-                      {msg.isSynced ? (language === 'ru' ? 'ДОБАВЛЕНО' : 'ADDED') : t.chat.syncNow}
-                    </button>
+                    <p className="text-[10px] text-white/50">{msg.draftEvent.date || TODAY} {msg.draftEvent.startTime}</p>
+                    <button onClick={() => handleSyncDraft(msg.id, 'event', msg.draftEvent)} disabled={msg.isSynced} className={`w-full py-2 text-[10px] font-black uppercase rounded-lg shadow-lg active:scale-95 transition-all ${msg.isSynced ? 'bg-charcoal/10 text-charcoal/30 cursor-not-allowed' : 'bg-primary text-charcoal'}`}>{msg.isSynced ? (language === 'ru' ? 'ДОБАВЛЕНО' : 'ADDED') : t.chat.syncNow}</button>
                   </div>
                 )}
                 {msg.draftTask && (
                   <div className="mt-4 p-4 bg-primary text-charcoal rounded-2xl space-y-3 border border-charcoal/10 shadow-lg">
                     <div className="flex justify-between items-start">
                       <p className="text-[9px] font-black uppercase tracking-widest opacity-40">{t.calendar.task}</p>
-                      {msg.draftTask.recurrence !== 'none' && <span className="material-symbols-outlined text-[14px]">sync</span>}
+                      {msg.draftTask.recurrence && msg.draftTask.recurrence !== 'none' && <span className="material-symbols-outlined text-[14px]">sync</span>}
                     </div>
                     <h4 className="font-extrabold text-base leading-tight">{msg.draftTask.title}</h4>
-                    <p className="text-[10px] font-bold opacity-60">
-                      {msg.draftTask.recurrence === 'specific_days' ? (language === 'ru' ? 'Цикличное расписание' : 'Recurring Routine') : (msg.draftTask.date || TODAY)}
-                    </p>
-                    <button 
-                      onClick={() => handleSyncDraft(msg.id, 'task', msg.draftTask)} 
-                      disabled={msg.isSynced}
-                      className={`w-full py-2.5 text-[10px] font-black uppercase rounded-xl shadow-2xl active:scale-95 transition-all ${msg.isSynced ? 'bg-charcoal/10 text-charcoal/30 cursor-not-allowed' : 'bg-charcoal text-cream'}`}
-                    >
-                      {msg.isSynced ? (language === 'ru' ? 'ДОБАВЛЕНО' : 'ADDED') : t.calendar.addSchedule}
-                    </button>
+                    <p className="text-[10px] font-bold opacity-60">{msg.draftTask.recurrence && msg.draftTask.recurrence !== 'none' ? (language === 'ru' ? 'Цикличное расписание' : 'Recurring Routine') : (msg.draftTask.date || TODAY)}</p>
+                    <button onClick={() => handleSyncDraft(msg.id, 'task', msg.draftTask)} disabled={msg.isSynced} className={`w-full py-2.5 text-[10px] font-black uppercase rounded-xl shadow-2xl active:scale-95 transition-all ${msg.isSynced ? 'bg-charcoal/10 text-charcoal/30 cursor-not-allowed' : 'bg-charcoal text-cream'}`}>{msg.isSynced ? (language === 'ru' ? 'ДОБАВЛЕНО' : 'ADDED') : t.calendar.addSchedule}</button>
                   </div>
                 )}
               </div>
             </div>
           ))}
-          {isTyping && (
-            <div className="flex items-center gap-3 animate-pulse">
-              <div className="size-2 bg-primary rounded-full"></div>
-              <div className="text-[10px] uppercase font-black text-charcoal/30 tracking-widest">{t.chat.analyzing}</div>
-            </div>
-          )}
+          {isTyping && <div className="flex items-center gap-3 animate-pulse"><div className="size-2 bg-primary rounded-full"></div><div className="text-[10px] uppercase font-black text-charcoal/30 tracking-widest">{t.chat.analyzing}</div></div>}
         </div>
         <div className="px-6 py-6 border-t border-charcoal/5 bg-white/60">
           <div className="flex items-center gap-2">
             <input className="flex-1 bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 px-6 text-sm font-medium" placeholder={t.chat.placeholder} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()}/>
-            <button onClick={handleSend} className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-primary hover:text-charcoal group">
-              <span className="material-symbols-outlined group-hover:scale-110 transition-transform">send</span>
-            </button>
+            <button onClick={handleSend} className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-primary hover:text-charcoal group"><span className="material-symbols-outlined group-hover:scale-110 transition-transform">send</span></button>
           </div>
         </div>
       </div>

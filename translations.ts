@@ -33,7 +33,7 @@ export const translations = {
       taskDesc: 'Task description?'
     },
     tasks: {
-      title: 'Tasks',
+      title: 'Objectives',
       activeFor: 'Active for',
       newTask: 'New Task',
       cancel: 'Cancel',
@@ -47,7 +47,9 @@ export const translations = {
       placeholder: 'Target objective for today?',
       postpone: 'Move to Tomorrow',
       abandon: 'Failed - Missed Deadline',
-      categories: ['Work', 'Personal', 'Meeting', 'Finance']
+      categories: ['Work', 'Personal', 'Meeting', 'Finance'],
+      routines: 'Daily Rituals & Routines',
+      oneOffs: 'Specific Objectives'
     },
     focus: {
       title: 'Focus',
@@ -107,7 +109,7 @@ export const translations = {
       taskDesc: 'Описание задачи?'
     },
     tasks: {
-      title: 'Задачи',
+      title: 'Цели',
       activeFor: 'Активно на',
       newTask: 'Новая задача',
       cancel: 'Отмена',
@@ -121,7 +123,9 @@ export const translations = {
       placeholder: 'Ваша цель на сегодня?',
       postpone: 'Перенести на завтра',
       abandon: 'Провалено - дедлайн пропущен',
-      categories: ['Работа', 'Личное', 'Встреча', 'Финансы']
+      categories: ['Работа', 'Личное', 'Встреча', 'Финансы'],
+      routines: 'Ежедневные ритуалы и привычки',
+      oneOffs: 'Конкретные цели'
     },
     focus: {
       title: 'Фокус',
