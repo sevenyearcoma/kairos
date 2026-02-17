@@ -153,7 +153,11 @@ const App: React.FC = () => {
           source: 'google',
           description: item.description || ''
         }));
-        setEvents(prev => [...prev.filter(e => e.source !== 'google'), ...googleEvents]);
+        setEvents(prev => {
+          const nonGoogle = prev.filter(e => e.source !== 'google');
+          // Deduplicate by external ID if any local items were actually already pushed to Google
+          return [...nonGoogle, ...googleEvents];
+        });
       }
     } catch (error: any) {
       if (error.message === 'Unauthorized') {
@@ -163,6 +167,48 @@ const App: React.FC = () => {
     }
   };
 
+  const createGoogleEvent = async (event: Event) => {
+    const token = localStorage.getItem('kairos_google_token');
+    if (!token) return;
+
+    try {
+      // Basic logic to convert 10:00 AM to 24h for Google API
+      const convertTime = (dateStr: string, timeStr: string) => {
+        if (timeStr === 'All Day') return { date: dateStr };
+        const [time, modifier] = timeStr.split(' ');
+        let [hours, minutes] = time.split(':');
+        if (hours === '12') hours = '00';
+        if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString();
+        return { dateTime: `${dateStr}T${hours.padStart(2, '0')}:${minutes}:00Z` }; // Using Z for simple UTC, adjust as needed
+      };
+
+      const googleEventResource = {
+        summary: event.title,
+        location: event.location,
+        description: event.description,
+        start: convertTime(event.date, event.startTime),
+        end: convertTime(event.date, event.endTime),
+      };
+
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(googleEventResource)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.id;
+      }
+    } catch (error) {
+      console.error("Error creating Google event:", error);
+    }
+    return null;
+  };
+
   useEffect(() => {
     const initGIS = () => {
       // @ts-ignore
@@ -170,8 +216,8 @@ const App: React.FC = () => {
         // @ts-ignore
         tokenClient.current = google.accounts.oauth2.initTokenClient({
           client_id: '1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com',
-          // Corrected scope: Added /auth/ segment
-          scope: 'https://www.googleapis.com/auth/calendar.readonly',
+          // Scope changed to full calendar access for adding events
+          scope: 'https://www.googleapis.com/auth/calendar',
           callback: async (response: any) => {
             if (response.error) {
               console.error("Google Auth Error:", response);
@@ -185,7 +231,6 @@ const App: React.FC = () => {
       }
     };
 
-    // Robust library loading check
     const checkInterval = setInterval(() => {
       // @ts-ignore
       if (typeof google !== 'undefined' && google.accounts) {
@@ -202,7 +247,6 @@ const App: React.FC = () => {
     if (token) {
       fetchGoogleEvents(token);
     } else if (tokenClient.current) {
-      // Requesting fresh access token
       tokenClient.current.requestAccessToken(); 
     }
   }, []);
@@ -217,17 +261,30 @@ const App: React.FC = () => {
 
   const activeChat = useMemo(() => chats.find(c => c.id === activeChatId) || chats[0], [chats, activeChatId]);
 
-  const handleAddEvent = (event: Partial<Event>) => {
+  const handleAddEvent = async (event: Partial<Event>) => {
+    const newId = Date.now().toString();
     const newEvent: Event = {
-      id: Date.now().toString(),
+      id: newId,
       title: event.title || 'Untitled',
       date: event.date || TODAY,
       startTime: event.startTime || '09:00 AM',
       endTime: event.endTime || '10:00 AM',
       type: event.type || 'work',
+      source: 'local',
       ...event
     };
+    
+    // Add locally first
     setEvents(prev => [...prev, newEvent]);
+
+    // If Google is connected, try to push it to Google Calendar
+    if (isGoogleConnected) {
+      const externalId = await createGoogleEvent(newEvent);
+      if (externalId) {
+        // Update the event with its Google ID so we can sync it properly
+        setEvents(prev => prev.map(e => e.id === newId ? { ...e, externalId, source: 'google' } : e));
+      }
+    }
   };
 
   const handleAddTask = (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], estimatedMinutes?: number, daysOfWeek?: number[]) => {
