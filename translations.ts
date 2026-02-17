@@ -12,11 +12,10 @@ export const translations = {
     },
     auth: {
       connectTitle: 'Personal Intelligence',
-      connectDesc: 'Kairos runs on your own Gemini API key. This ensures your data remains yours, and you use your own private AI quotas.',
-      connectBtn: 'Select Your API Key',
-      billingLink: 'Check your Google AI Billing',
-      setupRequired: 'Key Required',
-      personalActive: 'Personal Brain Active'
+      connectDesc: 'Kairos helps you manage your time effectively with privacy and kindness.',
+      connectBtn: 'Get Started',
+      setupRequired: 'Setup Required',
+      personalActive: 'Personal AI Active'
     },
     chat: {
       placeholder: 'Tell me your plans...',
@@ -33,7 +32,6 @@ export const translations = {
       userName: 'Your Name',
       assistantName: 'Assistant Name',
       save: 'Save Identity',
-      resetKey: 'Change AI Key',
       memoryCount: 'Stored Memories'
     },
     calendar: {
@@ -104,10 +102,9 @@ export const translations = {
     },
     auth: {
       connectTitle: 'Личный Интеллект',
-      connectDesc: 'Кайрос работает на вашем собственном ключе Gemini API. Это гарантирует приватность ваших данных и использование ваших личных квот.',
-      connectBtn: 'Выбрать ваш API Ключ',
-      billingLink: 'Проверить биллинг Google AI',
-      setupRequired: 'Нужен ключ',
+      connectDesc: 'Кайрос помогает эффективно управлять временем, соблюдая приватность.',
+      connectBtn: 'Начать',
+      setupRequired: 'Нужна настройка',
       personalActive: 'Личный ИИ активен'
     },
     chat: {
@@ -125,7 +122,6 @@ export const translations = {
       userName: 'Ваше имя',
       assistantName: 'Имя помощника',
       save: 'Сохранить личность',
-      resetKey: 'Сменить ключ ИИ',
       memoryCount: 'Сохраненные факты'
     },
     calendar: {

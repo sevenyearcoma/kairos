@@ -36,19 +36,23 @@ interface ChatViewProps {
   onBulkReschedule: (taskIds: string[], eventIds: string[], newDate: string, isExternal: boolean) => void;
   onAddMemory: (item: MemoryItem) => void;
   onSetSynced: (chatId: string, messageId: string) => void;
-  onKeyReset: () => void;
   onUpdatePrefs: (prefs: UserPreferences) => void;
 }
 
+// Extend ChatMessage for image display
+interface ExtendedChatMessage extends ChatMessage {
+  generatedImageUrl?: string;
+}
+
 const ChatView: React.FC<ChatViewProps> = ({ 
-  activeChat, personality, tasks, events, memory, language, prefs, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onSetSynced, onKeyReset, onUpdatePrefs
+  activeChat, personality, tasks, events, memory, language, prefs, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onSetSynced, onUpdatePrefs
 }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = useMemo(() => getT(language), [language]);
-  const messages = activeChat?.messages || [];
+  const messages = (activeChat?.messages || []) as ExtendedChatMessage[];
   const TODAY = new Date().toISOString().split('T')[0];
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
@@ -56,7 +60,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const handleSend = async () => {
     if (!input.trim()) return;
     const userText = input;
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
+    const userMsg: ExtendedChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
     onUpdateMessages(activeChat.id, [...messages, userMsg]);
     setInput('');
     setIsTyping(true);
@@ -67,20 +71,21 @@ const ChatView: React.FC<ChatViewProps> = ({
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: userText }] } });
-          if (queryEmbeddingResult.embedding?.values) {
-            const queryVector = queryEmbeddingResult.embedding.values;
+          // Fix: Use 'content' (singular) and access 'embeddings[0]' (plural array) as per @google/genai SDK response type
+          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: userText }] } });
+          if (queryEmbeddingResult.embeddings?.[0]?.values) {
+            const queryVector = queryEmbeddingResult.embeddings[0].values;
             const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
             retrievedMemories = scoredMemories.filter(m => m.score > 0.4).slice(0, 10).map(m => m.text);
           }
         } catch (e: any) { console.warn("Memory retrieval failed", e); }
       }
 
-      const systemInstruction = `You are ${prefs.assistantName}, the personal scheduling secretary for ${prefs.userName}.
-      User Stats: Burnout=${personality.burnoutRisk}%, Efficiency=${personality.efficiency}%.
-      Your Goal: Be kind, hyper-efficient, and protective of ${prefs.userName}'s time.
-      Knowledge about ${prefs.userName}: ${retrievedMemories.join('; ')}
-      Schedule Context: Today is ${TODAY}. You have ${events.length} events and ${tasks.length} tasks recorded.
+      const systemInstruction = `You are ${prefs.assistantName}, a kind, responsible AI scheduling secretary for ${prefs.userName}.
+      Personality: Calm, minimalist, and deeply focused on user well-being.
+      Stats: Burnout=${personality.burnoutRisk}%, Efficiency=${personality.efficiency}%.
+      Schedule Context: Today is ${TODAY}. You have ${events.length} events and ${tasks.length} tasks.
+      If the user is feeling stressed or the day is busy, you can suggest a "visual metaphor" (image) to help them focus or relax.
       OUTPUT ONLY RAW VALID JSON.`;
 
       const response = await ai.models.generateContent({
@@ -94,7 +99,8 @@ const ChatView: React.FC<ChatViewProps> = ({
             properties: {
               reply: { type: Type.STRING },
               intent: { type: Type.STRING, enum: ["general", "create_event", "create_task", "update_prefs"] },
-              newFact: { type: Type.STRING, description: "A new fact learned about the user to store in long-term memory." },
+              newFact: { type: Type.STRING, description: "A new fact learned about the user." },
+              visualPrompt: { type: Type.STRING, description: "A descriptive prompt to generate a helpful/calming image for the user (optional)." },
               kairosInsight: {
                 type: Type.OBJECT,
                 properties: {
@@ -118,28 +124,49 @@ const ChatView: React.FC<ChatViewProps> = ({
       });
 
       const result = JSON.parse(response.text || "{}");
+      let imageUrl: string | undefined = undefined;
+
+      // Handle image generation if prompt is provided
+      if (result.visualPrompt) {
+        try {
+          const imageResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: `A soft, minimalist, cinematic artistic image representing: ${result.visualPrompt}. Style: Dreamy, cream and charcoal colors, high quality.` }] },
+            config: { imageConfig: { aspectRatio: "16:9" } }
+          });
+          
+          for (const part of imageResponse.candidates[0].content.parts) {
+            if (part.inlineData) {
+              imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+              break;
+            }
+          }
+        } catch (imgErr) {
+          console.error("Image generation failed", imgErr);
+        }
+      }
       
       if (result.newFact) {
         try {
-          const emb = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: result.newFact }] } });
-          if (emb.embedding?.values) onAddMemory({ text: result.newFact, embedding: emb.embedding.values, timestamp: Date.now() });
+          // Fix: Use 'content' (singular) and access 'embeddings[0]' (plural array) as per @google/genai SDK response type
+          const emb = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: result.newFact }] } });
+          if (emb.embeddings?.[0]?.values) onAddMemory({ text: result.newFact, embedding: emb.embeddings[0].values, timestamp: Date.now() });
         } catch (e) { console.warn("Index fail", e); }
       }
 
-      const aiMsg: ChatMessage = { 
+      const aiMsg: ExtendedChatMessage = { 
         id: Date.now().toString(), 
         role: 'assistant', 
         content: result.reply,
         isSynced: false,
         kairosInsight: result.kairosInsight,
-        draftEvent: result.intent === 'create_event' ? { ...result.details, type: 'work' } : undefined,
         draftTask: result.intent === 'create_task' ? { ...result.details } : undefined,
+        generatedImageUrl: imageUrl
       };
       onUpdateMessages(activeChat.id, [...messages, userMsg, aiMsg]);
     } catch (e: any) { 
       console.error("Gemini Error:", e);
-      if (e.message?.includes("Requested entity was not found")) onKeyReset();
-      else onUpdateMessages(activeChat.id, [...messages, userMsg, { id: Date.now().toString(), role: 'assistant', content: "Something went wrong with our connection. Please check your AI key." }]);
+      onUpdateMessages(activeChat.id, [...messages, userMsg, { id: Date.now().toString(), role: 'assistant', content: "Something went wrong with the connection. I'm here, but the lines are a bit blurry." }]);
     } finally { setIsTyping(false); }
   };
 
@@ -170,7 +197,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       )}
 
       <div className="flex items-center justify-between px-6">
-         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">Secured with Personal Gemini Key</h2>
+         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">Secretary for your well-being</h2>
          <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
            <span className="material-symbols-outlined text-xl">settings</span>
          </button>
@@ -182,6 +209,13 @@ const ChatView: React.FC<ChatViewProps> = ({
             <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[85%] p-5 rounded-3xl text-[14px] leading-relaxed ${msg.role === 'user' ? 'bg-charcoal text-white rounded-tr-none' : 'bg-white border border-charcoal/10 text-charcoal rounded-tl-none shadow-sm'}`}>
                 <div className="whitespace-pre-wrap">{msg.content}</div>
+                
+                {msg.generatedImageUrl && (
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-charcoal/5 animate-in fade-in zoom-in-95 duration-700">
+                    <img src={msg.generatedImageUrl} alt="Visual metaphor" className="w-full h-auto object-cover" />
+                  </div>
+                )}
+
                 {msg.kairosInsight && (
                   <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/20 flex gap-3">
                     <span className="material-symbols-outlined text-[18px] text-primary">tips_and_updates</span>

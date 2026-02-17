@@ -10,47 +10,11 @@ import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryIte
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
 
-const ApiKeyGuard: React.FC<{ onConnect: () => void, language: Language }> = ({ onConnect, language }) => {
-  const t = useMemo(() => getT(language), [language]);
-  return (
-    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-8 text-center overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden opacity-20 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[120px] animate-pulse-gentle"></div>
-      </div>
-      
-      <div className="relative z-10 max-w-md w-full space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-        <div className="space-y-4">
-          <div className="size-20 bg-white/5 border border-white/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-2xl">
-            <span className="material-symbols-outlined text-primary text-4xl animate-pulse">brain</span>
-          </div>
-          <h1 className="text-4xl font-display font-black text-white uppercase tracking-tighter leading-none">
-            {t.auth.connectTitle}
-          </h1>
-          <p className="text-white/40 text-sm font-medium leading-relaxed px-4">
-            {t.auth.connectDesc}
-          </p>
-        </div>
+// Declare google as any to avoid TS errors with the external script
+declare const google: any;
 
-        <div className="space-y-4">
-          <button 
-            onClick={onConnect}
-            className="w-full py-5 bg-primary text-charcoal font-black uppercase tracking-[0.2em] text-[11px] rounded-2xl shadow-[0_0_30px_rgba(17,212,180,0.3)] hover:scale-105 active:scale-95 transition-all"
-          >
-            {t.auth.connectBtn}
-          </button>
-          <a 
-            href="https://ai.google.dev/gemini-api/docs/billing" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="block text-[10px] font-black text-white/20 uppercase tracking-widest hover:text-white/60 transition-colors"
-          >
-            {t.auth.billingLink}
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-};
+const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com";
+const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks";
 
 const App: React.FC = () => {
   const TODAY = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -61,28 +25,6 @@ const App: React.FC = () => {
   });
 
   const t = useMemo(() => getT(language), [language]);
-  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
-
-  useEffect(() => {
-    const checkKey = async () => {
-      // @ts-ignore
-      if (window.aistudio) {
-        // @ts-ignore
-        const result = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(result);
-      }
-    };
-    checkKey();
-  }, []);
-
-  const handleConnectKey = async () => {
-    // @ts-ignore
-    if (window.aistudio) {
-      // @ts-ignore
-      await window.aistudio.openSelectKey();
-      setHasApiKey(true);
-    }
-  };
 
   const [prefs, setPrefs] = useState<UserPreferences>(() => {
     const saved = localStorage.getItem('kairos_prefs');
@@ -136,6 +78,41 @@ const App: React.FC = () => {
   const location = useLocation();
   const tokenClient = useRef<any>(null);
 
+  // Initialize Google Identity Services
+  useEffect(() => {
+    const initGis = () => {
+      if (typeof google !== 'undefined' && !tokenClient.current) {
+        try {
+          tokenClient.current = google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: GOOGLE_SCOPES,
+            callback: (tokenResponse: any) => {
+              if (tokenResponse && tokenResponse.access_token) {
+                localStorage.setItem('kairos_google_token', tokenResponse.access_token);
+                setIsGoogleConnected(true);
+                const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                setLastSyncTime(now);
+                localStorage.setItem('kairos_last_sync', now);
+                console.log("Google sync activated.");
+              }
+            },
+          });
+        } catch (err) {
+          console.error("GIS Init failed", err);
+        }
+      }
+    };
+
+    if (typeof google !== 'undefined') {
+      initGis();
+    } else {
+      const script = document.querySelector('script[src*="gsi/client"]');
+      if (script) {
+        script.addEventListener('load', initGis);
+      }
+    }
+  }, []);
+
   useEffect(() => localStorage.setItem('kairos_lang', language), [language]);
   useEffect(() => localStorage.setItem('kairos_prefs', JSON.stringify(prefs)), [prefs]);
   useEffect(() => localStorage.setItem('kairos_events', JSON.stringify(events)), [events]);
@@ -165,7 +142,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleSyncGoogle = useCallback(() => {
-    if (tokenClient.current) tokenClient.current.requestAccessToken(); 
+    if (tokenClient.current) {
+      tokenClient.current.requestAccessToken({ prompt: 'consent' }); 
+    } else {
+      console.warn("Google SDK not yet available.");
+    }
+  }, []);
+
+  const handleDisconnectGoogle = useCallback(() => {
+    localStorage.removeItem('kairos_google_token');
+    localStorage.removeItem('kairos_last_sync');
+    setIsGoogleConnected(false);
+    setLastSyncTime(null);
   }, []);
 
   const handleAddEvent = async (event: Partial<Event>) => {
@@ -188,16 +176,12 @@ const App: React.FC = () => {
     setActiveChatId(newId);
   };
 
-  const onKeyReset = () => setHasApiKey(false);
-
   useEffect(() => {
     if (chats.length === 0) handleNewChat();
   }, []);
 
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
-      {!hasApiKey && <ApiKeyGuard onConnect={handleConnectKey} language={language} />}
-      
       <aside className="hidden md:flex flex-col w-72 border-r border-charcoal/5 bg-white/50 sticky top-0 h-screen p-8 shrink-0 overflow-y-auto scrollbar-hide">
         <div className="flex items-center gap-3 mb-12">
           <div className="size-10 bg-charcoal rounded-xl flex items-center justify-center text-primary shadow-2xl">
@@ -223,16 +207,6 @@ const App: React.FC = () => {
             {t.nav.focus}
           </Link>
         </nav>
-        
-        <div className="mt-8 pt-8 border-t border-charcoal/5 space-y-4">
-           <div className="p-4 bg-charcoal text-cream rounded-2xl space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-sm">bolt</span>
-                <span className="text-[9px] font-black uppercase tracking-widest">{t.auth.personalActive}</span>
-              </div>
-              <button onClick={onKeyReset} className="w-full py-2 bg-white/10 hover:bg-white/20 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all">{t.settings.resetKey}</button>
-           </div>
-        </div>
       </aside>
 
       <main className="flex-1 min-w-0 flex flex-col relative bg-white/30 h-screen overflow-hidden">
@@ -271,12 +245,11 @@ const App: React.FC = () => {
                   onBulkReschedule={() => {}}
                   onAddMemory={handleAddMemoryItem}
                   onSetSynced={handleSetMessageSynced}
-                  onKeyReset={onKeyReset}
                   onUpdatePrefs={setPrefs}
-                /> : <div>Initializing...</div>
+                /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">Initializing Secretary...</div>
               } />
-              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={() => {}} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
-              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={() => {}} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
+              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
+              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
               <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={() => {}} />} />
             </Routes>
           </div>
