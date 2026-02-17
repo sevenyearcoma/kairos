@@ -12,11 +12,13 @@ export const translations = {
     },
     chat: {
       placeholder: 'Tell me your plans...',
-      analyzing: 'Secretary is analyzing density...',
+      analyzing: 'Kairos is thinking...',
       recommendation: 'Secretary Recommendation',
       syncNow: 'Synchronize Now',
       insight: 'Kairos Insight',
-      initialMsg: "Good morning. I've analyzed your schedule. How can I help you today?"
+      initialMsg: "Good morning. I've analyzed your schedule. How can I help you today?",
+      eveningSummaryTitle: 'Evening Summary',
+      generatingSummary: 'Generating your evening summary...'
     },
     calendar: {
       linkGoogle: 'Link Google',
@@ -84,11 +86,13 @@ export const translations = {
     },
     chat: {
       placeholder: 'Поделитесь планами...',
-      analyzing: 'Секретарь анализирует нагрузку...',
+      analyzing: 'Кайрос думает...',
       recommendation: 'Рекомендация секретаря',
       syncNow: 'Синхронизировать',
       insight: 'Инсайт Кайрос',
-      initialMsg: "Доброе утро. Я проанализировал ваше расписание. Чем могу помочь сегодня?"
+      initialMsg: "Доброе утро. Я проанализировал ваше расписание. Чем могу помочь сегодня?",
+      eveningSummaryTitle: 'Вечерний итог',
+      generatingSummary: 'Готовлю ваш вечерний итог...'
     },
     calendar: {
       linkGoogle: 'Привязать Google',
