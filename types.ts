@@ -3,7 +3,6 @@ export type Language = 'en' | 'ru';
 
 export interface MemoryItem {
   text: string;
-  embedding: number[];
   timestamp: number;
 }
 

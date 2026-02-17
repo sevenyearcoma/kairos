@@ -10,14 +10,18 @@ import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryIte
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
 
-// Declare google as any to avoid TS errors with the external script
 declare const google: any;
 
 const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com";
 const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks";
 
 const App: React.FC = () => {
-  const TODAY = useMemo(() => new Date().toISOString().split('T')[0], []);
+  // Use local date instead of UTC to ensure "Today" is accurate to the user's timezone
+  const TODAY = useMemo(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+  }, []);
 
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem('kairos_lang');
@@ -69,6 +73,8 @@ const App: React.FC = () => {
   
   const [isGoogleConnected, setIsGoogleConnected] = useState(() => !!localStorage.getItem('kairos_google_token'));
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem('kairos_last_sync'));
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
 
   const activeChat = useMemo(() => {
     if (!chats.length) return null;
@@ -78,7 +84,59 @@ const App: React.FC = () => {
   const location = useLocation();
   const tokenClient = useRef<any>(null);
 
-  // Initialize Google Identity Services
+  const syncGoogleData = useCallback(async (token: string) => {
+    setIsSyncing(true);
+    try {
+      const calendarResponse = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=50&singleEvents=true&orderBy=startTime`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (calendarResponse.status === 401) throw new Error('Unauthorized');
+      const calendarData = await calendarResponse.json();
+      const googleEvents: Event[] = (calendarData.items || []).map((item: any) => {
+        const start = item.start.dateTime || item.start.date;
+        const date = start.split('T')[0];
+        const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day';
+        const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        return {
+          id: `google-${item.id}`,
+          externalId: item.id,
+          title: item.summary || 'Untitled Google Event',
+          date,
+          startTime,
+          endTime,
+          type: 'work',
+          source: 'google',
+          description: item.description,
+          location: item.location
+        };
+      });
+
+      const tasksResponse = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks?maxResults=50', { headers: { Authorization: `Bearer ${token}` } });
+      if (tasksResponse.status === 401) throw new Error('Unauthorized');
+      const tasksData = await tasksResponse.json();
+      const googleTasks: Task[] = (tasksData.items || []).filter((item: any) => item.title).map((item: any) => {
+        const date = item.due ? item.due.split('T')[0] : TODAY;
+        return { id: `google-${item.id}`, externalId: item.id, title: item.title, category: 'Work', date, time: '09:00 AM', completed: item.status === 'completed', description: item.notes, source: 'google' };
+      });
+
+      setEvents(prev => [...prev.filter(e => e.source !== 'google'), ...googleEvents]);
+      setTasks(prev => [...prev.filter(t => t.source !== 'google'), ...googleTasks]);
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSyncTime(now);
+      localStorage.setItem('kairos_last_sync', now);
+      setIsGoogleConnected(true);
+    } catch (err: any) {
+      console.error("Sync failed:", err);
+      if (err.message === 'Unauthorized') {
+        localStorage.removeItem('kairos_google_token');
+        setIsGoogleConnected(false);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [TODAY]);
+
   useEffect(() => {
     const initGis = () => {
       if (typeof google !== 'undefined' && !tokenClient.current) {
@@ -89,28 +147,23 @@ const App: React.FC = () => {
             callback: (tokenResponse: any) => {
               if (tokenResponse && tokenResponse.access_token) {
                 localStorage.setItem('kairos_google_token', tokenResponse.access_token);
-                setIsGoogleConnected(true);
-                const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                setLastSyncTime(now);
-                localStorage.setItem('kairos_last_sync', now);
-                console.log("Google sync activated.");
+                syncGoogleData(tokenResponse.access_token);
               }
             },
           });
-        } catch (err) {
-          console.error("GIS Init failed", err);
-        }
+        } catch (err) { console.error("GIS Init failed", err); }
       }
     };
-
-    if (typeof google !== 'undefined') {
-      initGis();
-    } else {
+    if (typeof google !== 'undefined') initGis();
+    else {
       const script = document.querySelector('script[src*="gsi/client"]');
-      if (script) {
-        script.addEventListener('load', initGis);
-      }
+      if (script) script.addEventListener('load', initGis);
     }
+  }, [syncGoogleData]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('kairos_google_token');
+    if (token && !isSyncing) syncGoogleData(token);
   }, []);
 
   useEffect(() => localStorage.setItem('kairos_lang', language), [language]);
@@ -121,7 +174,6 @@ const App: React.FC = () => {
   useEffect(() => localStorage.setItem('kairos_active_chat', activeChatId), [activeChatId]);
   useEffect(() => localStorage.setItem('kairos_memory_v2', JSON.stringify(memory)), [memory]);
   useEffect(() => localStorage.setItem('kairos_personality', JSON.stringify(personality)), [personality]);
-  useEffect(() => { if (lastSyncTime) localStorage.setItem('kairos_last_sync', lastSyncTime); }, [lastSyncTime]);
 
   const handleUpdateChatMessages = (chatId: string, messages: ChatMessage[], newTitle?: string) => {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, messages, title: newTitle || c.title } : c));
@@ -130,35 +182,41 @@ const App: React.FC = () => {
   const handleSetMessageSynced = (chatId: string, messageId: string) => {
     setChats(prev => prev.map(c => {
       if (c.id !== chatId) return c;
-      return {
-        ...c,
-        messages: c.messages.map(m => m.id === messageId ? { ...m, isSynced: true } : m)
-      };
+      return { ...c, messages: c.messages.map(m => m.id === messageId ? { ...m, isSynced: true } : m) };
     }));
   };
 
   const handleAddMemoryItem = useCallback((item: MemoryItem) => {
-    setMemory(prev => [item, ...prev].slice(0, 100));
+    setMemory(prev => [item, ...prev].slice(0, 50));
   }, []);
 
   const handleSyncGoogle = useCallback(() => {
-    if (tokenClient.current) {
-      tokenClient.current.requestAccessToken({ prompt: 'consent' }); 
-    } else {
-      console.warn("Google SDK not yet available.");
-    }
-  }, []);
+    const token = localStorage.getItem('kairos_google_token');
+    if (token) syncGoogleData(token);
+    else if (tokenClient.current) tokenClient.current.requestAccessToken({ prompt: 'consent' });
+  }, [syncGoogleData]);
 
   const handleDisconnectGoogle = useCallback(() => {
     localStorage.removeItem('kairos_google_token');
     localStorage.removeItem('kairos_last_sync');
     setIsGoogleConnected(false);
     setLastSyncTime(null);
+    setEvents(prev => prev.filter(e => e.source !== 'google'));
+    setTasks(prev => prev.filter(t => t.source !== 'google'));
   }, []);
 
   const handleAddEvent = async (event: Partial<Event>) => {
     const newId = Date.now().toString();
-    const newEvent: Event = { id: newId, title: event.title || 'Untitled', date: event.date || TODAY, startTime: event.startTime || '10:00 AM', endTime: event.endTime || '11:00 AM', type: event.type || 'work', source: 'local', ...event };
+    const newEvent: Event = { 
+      id: newId, 
+      title: event.title || 'Untitled', 
+      date: event.date || TODAY, 
+      startTime: event.startTime || '10:00 AM', 
+      endTime: event.endTime || '11:00 AM', 
+      type: event.type || 'work', 
+      source: 'local',
+      ...event 
+    };
     setEvents(prev => [...prev, newEvent]);
   };
 
@@ -169,16 +227,13 @@ const App: React.FC = () => {
 
   const handleNewChat = () => {
     const newId = Date.now().toString();
-    const initialMsg = language === 'ru' 
-      ? `Привет, ${prefs.userName}! Я ваш личный ${prefs.assistantName}. Готов помочь с планами.` 
-      : `Hello, ${prefs.userName}! I'm your personal ${prefs.assistantName}. Ready to assist with your day.`;
+    const currentT = getT(language);
+    const initialMsg = currentT.chat.initialMsg(prefs.userName, prefs.assistantName);
     setChats(prev => [{ id: newId, title: language === 'en' ? 'New Conversation' : 'Новый разговор', messages: [{ id: Date.now().toString(), role: 'assistant', content: initialMsg }], createdAt: Date.now() }, ...prev]);
     setActiveChatId(newId);
   };
 
-  useEffect(() => {
-    if (chats.length === 0) handleNewChat();
-  }, []);
+  useEffect(() => { if (chats.length === 0) handleNewChat(); }, []);
 
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
@@ -235,6 +290,8 @@ const App: React.FC = () => {
                   memory={memory}
                   language={language}
                   prefs={prefs}
+                  isAiThinking={isAiThinking}
+                  setIsAiThinking={setIsAiThinking}
                   onSetActiveChat={setActiveChatId}
                   onNewChat={handleNewChat}
                   onDeleteChat={(id) => setChats(prev => prev.filter(c => c.id !== id))}
@@ -248,8 +305,8 @@ const App: React.FC = () => {
                   onUpdatePrefs={setPrefs}
                 /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">Initializing Secretary...</div>
               } />
-              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
-              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
+              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} isSyncing={isSyncing} />} />
+              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} isSyncing={isSyncing} />} />
               <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={() => {}} />} />
             </Routes>
           </div>

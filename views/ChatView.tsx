@@ -2,19 +2,40 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryItem, UserPreferences } from '../types';
-import ItemDetailModal from '../components/ItemDetailModal';
+import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (!vecA || !vecB) return 0;
-  let dotProduct = 0, mA = 0, mB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    mA += vecA[i] * vecA[i];
-    mB += vecB[i] * vecB[i];
+/**
+ * Robustly extracts and parses JSON from a potentially messy AI response string.
+ */
+function extractAndParseJson(text: string): any {
+  if (!text) return { reply: "I'm sorry, I couldn't process that.", intent: "general" };
+  
+  let jsonStr = text.trim();
+  
+  // Try to find a JSON block in markdown backticks
+  const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    jsonStr = jsonBlockMatch[1].trim();
+  } else {
+    // If no markdown block, try to find the first '{' and last '}'
+    const startIndex = text.indexOf('{');
+    const endIndex = text.lastIndexOf('}') + 1;
+    if (startIndex >= 0 && endIndex > startIndex) {
+      jsonStr = text.substring(startIndex, endIndex).trim();
+    }
   }
-  const mag = Math.sqrt(mA) * Math.sqrt(mB);
-  return mag === 0 ? 0 : dotProduct / mag;
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.error("Failed to parse JSON from AI response", e, text);
+    // Return a safe fallback instead of crashing
+    return { 
+      reply: text.substring(0, 200) || "I encountered a formatting error, but I'm still here to help.", 
+      intent: "general" 
+    };
+  }
 }
 
 interface ChatViewProps {
@@ -26,6 +47,8 @@ interface ChatViewProps {
   memory: MemoryItem[];
   language: Language;
   prefs: UserPreferences;
+  isAiThinking: boolean;
+  setIsAiThinking: (val: boolean) => void;
   onSetActiveChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat: (id: string) => void;
@@ -39,68 +62,161 @@ interface ChatViewProps {
   onUpdatePrefs: (prefs: UserPreferences) => void;
 }
 
-// Extend ChatMessage for image display
-interface ExtendedChatMessage extends ChatMessage {
-  generatedImageUrl?: string;
-}
-
 const ChatView: React.FC<ChatViewProps> = ({ 
-  activeChat, personality, tasks, events, memory, language, prefs, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onSetSynced, onUpdatePrefs
+  activeChat, personality, tasks, events, memory, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onSetSynced, onUpdatePrefs
 }) => {
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [refining, setRefining] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = useMemo(() => getT(language), [language]);
-  const messages = (activeChat?.messages || []) as ExtendedChatMessage[];
-  const TODAY = new Date().toISOString().split('T')[0];
 
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
+  const messages = (activeChat?.messages || []);
+
+  // Compute local date logic once per render for display stats
+  const { todayStr, tomorrowStr, todayEventsCount, todayTasksCount } = useMemo(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset() * 60000;
+    const localDate = new Date(d.getTime() - offset);
+    const tStr = localDate.toISOString().split('T')[0];
+
+    const tmr = new Date(localDate);
+    tmr.setDate(tmr.getDate() + 1);
+    const tmrStr = tmr.toISOString().split('T')[0];
+    
+    return {
+      todayStr: tStr,
+      tomorrowStr: tmrStr,
+      todayEventsCount: events.filter(e => isItemOnDate(e, tStr)).length,
+      todayTasksCount: tasks.filter(t => isItemOnDate(t, tStr) && !t.completed).length
+    };
+  }, [events, tasks]);
+
+  useEffect(() => { 
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; 
+  }, [messages, isAiThinking]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isAiThinking) return;
+    
     const userText = input;
-    const userMsg: ExtendedChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
-    onUpdateMessages(activeChat.id, [...messages, userMsg]);
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
+    
+    // Protect against stale messages prop by building the new history locally
+    const currentHistory = [...messages, userMsg];
+    onUpdateMessages(activeChat.id, currentHistory);
+    
     setInput('');
-    setIsTyping(true);
+    setIsAiThinking(true);
+    setRefining(false);
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      let retrievedMemories: string[] = [];
-      if (memory.length > 0) {
-        try {
-          // Fix: Use 'content' (singular) and access 'embeddings[0]' (plural array) as per @google/genai SDK response type
-          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: userText }] } });
-          if (queryEmbeddingResult.embeddings?.[0]?.values) {
-            const queryVector = queryEmbeddingResult.embeddings[0].values;
-            const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
-            retrievedMemories = scoredMemories.filter(m => m.score > 0.4).slice(0, 10).map(m => m.text);
-          }
-        } catch (e: any) { console.warn("Memory retrieval failed", e); }
-      }
+      const retrievedMemories = memory.slice(0, 15).map(m => m.text);
 
-      const systemInstruction = `You are ${prefs.assistantName}, a kind, responsible AI scheduling secretary for ${prefs.userName}.
-      Personality: Calm, minimalist, and deeply focused on user well-being.
-      Stats: Burnout=${personality.burnoutRisk}%, Efficiency=${personality.efficiency}%.
-      Schedule Context: Today is ${TODAY}. You have ${events.length} events and ${tasks.length} tasks.
-      If the user is feeling stressed or the day is busy, you can suggest a "visual metaphor" (image) to help them focus or relax.
-      OUTPUT ONLY RAW VALID JSON.`;
+      // --- Context Construction ---
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      const localDate = new Date(now.getTime() - offset);
+      const currentTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDayName = dayNames[now.getDay()];
 
-      const response = await ai.models.generateContent({
+      // Convert recent chat history to string for context
+      const chatHistoryStr = currentHistory.slice(-10).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+
+      // --- STAGE 1: PLANNER (Strategic Reasoning with History) ---
+      const plannerPrompt = `
+        You are "Kairos", an intelligent, proactive scheduling assistant.
+        
+        CONTEXT:
+        - User: ${prefs.userName}
+        - Current Date: ${todayStr} (${currentDayName})
+        - Tomorrow's Date: ${tomorrowStr}
+        - Current Time: ${currentTimeStr}
+        - Memories: ${retrievedMemories.join('; ')}
+
+        RECENT CONVERSATION HISTORY (Use this to resolve "it", "that", or missing titles):
+        ${chatHistoryStr}
+
+        CURRENT USER REQUEST: "${userText}"
+
+        YOUR GOAL: Satisfy the user's request immediately.
+        
+        CRITICAL RULES FOR INTERACTION:
+        1. **CONTEXT IS KING**: If the user says "7pm" or "same time", look at the HISTORY to find what event they are talking about (e.g., Gym, Meeting). 
+        2. **GUESS & ANTICIPATE**: Do NOT ask clarifying questions for minor details.
+           - If Time is missing -> Guess a reasonable time (e.g., 9AM for work, 6PM for gym) or use the current time.
+           - If Title is missing -> Infer it from context (e.g., "Gym", "Call", "Task").
+           - If Duration is missing -> Assume 1 hour.
+           - If Date is missing -> Assume Today (if time is future) or Tomorrow.
+        3. **ONLY ASK IF IMPOSSIBLE**: Only ask a question if the request is completely gibberish or you absolutely cannot infer the intent from History.
+        
+        OUTPUT STRATEGY:
+        - State clearly what you are going to schedule based on your guesses.
+        - Merge the history info with the current info.
+      `;
+
+      const planResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{ role: 'user', parts: [{ text: userText }] }],
+        contents: plannerPrompt,
+      });
+
+      const plannerResult = planResponse.text || "Proceed with best guess.";
+
+      // --- STAGE 2: EXECUTOR (Strict Formatting) ---
+      setRefining(true);
+      
+      const executorSystemInstruction = `
+        You are the "Executor" for Kairos. Generate the final JSON.
+
+        INPUTS:
+        - Chat History (for context)
+        - Planner Strategy (Logic)
+
+        INTENT RULES:
+        - 'create_event': Use this if there is ANY implication of a specific time or a calendar block (e.g. "Gym", "Meeting").
+        - 'create_task': Use this for to-do items without strict times.
+        - 'general': Only if it's pure chit-chat.
+
+        FIELD FILLING RULES (BE AGGRESSIVE):
+        - If the Planner inferred a title/time/date, USE IT.
+        - **recurrence**: Detect "every tuesday", "weekly", "daily". 
+        - **daysOfWeek**: If "every Tuesday and Thursday", output [2, 4]. (0=Sun, 1=Mon...).
+        - **date**: Must be YYYY-MM-DD. Calculate the *next* occurrence of the day mentioned relative to ${todayStr}.
+        
+        OUTPUT SCHEMA (JSON Only):
+        {
+          "reply": "Confirmation message. Be brief. State what you scheduled (e.g. 'Added Gym for Tuesdays at 7pm').",
+          "intent": "create_event" | "create_task" | "general" | "update_prefs",
+          "details": { ...event/task fields... },
+          "kairosInsight": { "type": "tip/encouragement", "message": "Short wise thought" } (Optional)
+        }
+        
+        Language: ${language === 'ru' ? 'Russian' : 'English'}.
+      `;
+
+      const executorPrompt = `
+        HISTORY:
+        ${chatHistoryStr}
+
+        PLANNER STRATEGY: "${plannerResult}"
+        
+        Generate final JSON.
+      `;
+
+      const finalResponse = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: executorPrompt,
         config: {
-          systemInstruction,
+          systemInstruction: executorSystemInstruction,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
               reply: { type: Type.STRING },
               intent: { type: Type.STRING, enum: ["general", "create_event", "create_task", "update_prefs"] },
-              newFact: { type: Type.STRING, description: "A new fact learned about the user." },
-              visualPrompt: { type: Type.STRING, description: "A descriptive prompt to generate a helpful/calming image for the user (optional)." },
+              newFact: { type: Type.STRING, description: "Extract any new personal fact to remember about the user" },
               kairosInsight: {
                 type: Type.OBJECT,
                 properties: {
@@ -112,9 +228,14 @@ const ChatView: React.FC<ChatViewProps> = ({
                 type: Type.OBJECT,
                 properties: {
                   title: { type: Type.STRING },
-                  date: { type: Type.STRING },
+                  date: { type: Type.STRING, description: "YYYY-MM-DD" },
+                  startTime: { type: Type.STRING, description: "HH:MM AM/PM" },
+                  endTime: { type: Type.STRING, description: "HH:MM AM/PM" },
                   category: { type: Type.STRING },
-                  description: { type: Type.STRING }
+                  description: { type: Type.STRING },
+                  recurrence: { type: Type.STRING, enum: ["none", "daily", "weekly", "weekdays", "specific_days", "monthly"] },
+                  daysOfWeek: { type: Type.ARRAY, items: { type: Type.INTEGER }, description: "0=Sun...6=Sat" },
+                  dayOfMonth: { type: Type.INTEGER }
                 }
               }
             },
@@ -123,51 +244,77 @@ const ChatView: React.FC<ChatViewProps> = ({
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
-      let imageUrl: string | undefined = undefined;
-
-      // Handle image generation if prompt is provided
-      if (result.visualPrompt) {
-        try {
-          const imageResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: `A soft, minimalist, cinematic artistic image representing: ${result.visualPrompt}. Style: Dreamy, cream and charcoal colors, high quality.` }] },
-            config: { imageConfig: { aspectRatio: "16:9" } }
-          });
-          
-          for (const part of imageResponse.candidates[0].content.parts) {
-            if (part.inlineData) {
-              imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-              break;
-            }
-          }
-        } catch (imgErr) {
-          console.error("Image generation failed", imgErr);
-        }
-      }
+      const result = extractAndParseJson(finalResponse.text || "{}");
       
       if (result.newFact) {
-        try {
-          // Fix: Use 'content' (singular) and access 'embeddings[0]' (plural array) as per @google/genai SDK response type
-          const emb = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: result.newFact }] } });
-          if (emb.embeddings?.[0]?.values) onAddMemory({ text: result.newFact, embedding: emb.embeddings[0].values, timestamp: Date.now() });
-        } catch (e) { console.warn("Index fail", e); }
+        onAddMemory({ text: result.newFact, timestamp: Date.now() });
       }
 
-      const aiMsg: ExtendedChatMessage = { 
-        id: Date.now().toString(), 
+      // Ensure drafts have fallback data if model missed something
+      let draftEventData = undefined;
+      let draftTaskData = undefined;
+
+      if (result.intent === 'create_event' && result.details) {
+        draftEventData = {
+          ...result.details,
+          date: result.details.date || todayStr,
+          startTime: result.details.startTime || '09:00 AM',
+          endTime: result.details.endTime || '10:00 AM',
+          title: result.details.title || 'New Event'
+        };
+      } else if (result.intent === 'create_task' && result.details) {
+        draftTaskData = {
+          ...result.details,
+          date: result.details.date || todayStr,
+          title: result.details.title || 'New Task'
+        };
+      }
+
+      const aiMsg: ChatMessage = { 
+        id: (Date.now() + 1).toString(), 
         role: 'assistant', 
-        content: result.reply,
+        content: result.reply || (language === 'ru' ? "Простите, я не смог сформулировать ответ." : "I'm sorry, I couldn't formulate a response."),
         isSynced: false,
         kairosInsight: result.kairosInsight,
-        draftTask: result.intent === 'create_task' ? { ...result.details } : undefined,
-        generatedImageUrl: imageUrl
+        draftTask: draftTaskData,
+        draftEvent: draftEventData
       };
-      onUpdateMessages(activeChat.id, [...messages, userMsg, aiMsg]);
+      
+      onUpdateMessages(activeChat.id, [...currentHistory, aiMsg]);
     } catch (e: any) { 
       console.error("Gemini Error:", e);
-      onUpdateMessages(activeChat.id, [...messages, userMsg, { id: Date.now().toString(), role: 'assistant', content: "Something went wrong with the connection. I'm here, but the lines are a bit blurry." }]);
-    } finally { setIsTyping(false); }
+      onUpdateMessages(activeChat.id, [...currentHistory, { 
+        id: Date.now().toString(), 
+        role: 'assistant', 
+        content: t.chat.error 
+      }]);
+    } finally { 
+      setIsAiThinking(false);
+      setRefining(false);
+    }
+  };
+
+  const handleAcceptDraft = (msg: ChatMessage) => {
+    if (msg.draftTask) {
+      onAddTask(
+        msg.draftTask.title || 'Untitled Task', 
+        msg.draftTask.category || 'Personal', 
+        msg.draftTask.date || todayStr, 
+        msg.draftTask.description
+      );
+    } else if (msg.draftEvent) {
+      onAddEvent({
+        title: msg.draftEvent.title || 'Untitled Event',
+        date: msg.draftEvent.date || todayStr,
+        startTime: msg.draftEvent.startTime || '09:00 AM',
+        endTime: msg.draftEvent.endTime || '10:00 AM',
+        description: msg.draftEvent.description,
+        recurrence: msg.draftEvent.recurrence as any || 'none',
+        daysOfWeek: msg.draftEvent.daysOfWeek,
+        dayOfMonth: msg.draftEvent.dayOfMonth
+      });
+    }
+    onSetSynced(activeChat.id, msg.id);
   };
 
   return (
@@ -186,10 +333,6 @@ const ChatView: React.FC<ChatViewProps> = ({
                   <label className="text-[10px] font-black uppercase text-charcoal/30 mb-1 block">{t.settings.assistantName}</label>
                   <input className="w-full bg-beige-soft border-none rounded-xl py-3 px-4 font-bold" value={prefs.assistantName} onChange={(e) => onUpdatePrefs({...prefs, assistantName: e.target.value})} />
                 </div>
-                <div className="pt-4 flex items-center justify-between border-t border-charcoal/5">
-                   <span className="text-[10px] font-black uppercase text-charcoal/30">{t.settings.memoryCount}</span>
-                   <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-[10px] font-black">{memory.length}</span>
-                </div>
              </div>
              <button onClick={() => setShowSettings(false)} className="w-full py-4 bg-charcoal text-cream rounded-2xl font-black uppercase text-[10px] tracking-widest">{t.settings.save}</button>
           </div>
@@ -197,7 +340,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       )}
 
       <div className="flex items-center justify-between px-6">
-         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">Secretary for your well-being</h2>
+         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">Capacity: {todayEventsCount} Events, {todayTasksCount} Tasks Today</h2>
          <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
            <span className="material-symbols-outlined text-xl">settings</span>
          </button>
@@ -210,34 +353,68 @@ const ChatView: React.FC<ChatViewProps> = ({
               <div className={`max-w-[85%] p-5 rounded-3xl text-[14px] leading-relaxed ${msg.role === 'user' ? 'bg-charcoal text-white rounded-tr-none' : 'bg-white border border-charcoal/10 text-charcoal rounded-tl-none shadow-sm'}`}>
                 <div className="whitespace-pre-wrap">{msg.content}</div>
                 
-                {msg.generatedImageUrl && (
-                  <div className="mt-4 overflow-hidden rounded-2xl border border-charcoal/5 animate-in fade-in zoom-in-95 duration-700">
-                    <img src={msg.generatedImageUrl} alt="Visual metaphor" className="w-full h-auto object-cover" />
-                  </div>
-                )}
-
                 {msg.kairosInsight && (
                   <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/20 flex gap-3">
                     <span className="material-symbols-outlined text-[18px] text-primary">tips_and_updates</span>
                     <p className="text-[11px] font-bold text-charcoal/80">{msg.kairosInsight.message}</p>
                   </div>
                 )}
-                {msg.draftTask && (
-                  <div className="mt-4 p-4 bg-primary text-charcoal rounded-2xl space-y-2">
-                    <p className="text-[9px] font-black uppercase opacity-40">{t.calendar.task}</p>
-                    <h4 className="font-extrabold">{msg.draftTask.title}</h4>
-                    <button onClick={() => { onAddTask(msg.draftTask!.title!, 'Personal', msg.draftTask!.date || TODAY); onSetSynced(activeChat.id, msg.id); }} disabled={msg.isSynced} className="w-full py-2 bg-charcoal text-cream text-[9px] font-black uppercase rounded-lg disabled:opacity-30">{msg.isSynced ? 'ADDED' : 'ACCEPT'}</button>
+
+                {(msg.draftTask || msg.draftEvent) && (
+                  <div className="mt-4 p-4 bg-beige-soft border border-charcoal/5 text-charcoal rounded-2xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[9px] font-black uppercase opacity-40">{msg.draftTask ? t.calendar.task : t.calendar.event}</p>
+                      {((msg.draftEvent?.recurrence && msg.draftEvent.recurrence !== 'none') || (msg.draftTask?.recurrence && msg.draftTask.recurrence !== 'none')) && (
+                        <span className="text-[8px] font-black bg-primary/20 text-primary px-1.5 py-0.5 rounded-full uppercase">
+                          {(msg.draftEvent?.recurrence || msg.draftTask?.recurrence || '').replace('_', ' ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-extrabold text-charcoal">{(msg.draftTask || msg.draftEvent)?.title}</h4>
+                      {msg.draftEvent && (
+                        <p className="text-[10px] text-charcoal/50 font-medium">
+                          {msg.draftEvent.date} • {msg.draftEvent.startTime}
+                          {msg.draftEvent.daysOfWeek && msg.draftEvent.daysOfWeek.length > 0 && 
+                            ` • ${msg.draftEvent.daysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}`
+                          }
+                        </p>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => handleAcceptDraft(msg)} 
+                      disabled={msg.isSynced} 
+                      className="w-full py-2.5 bg-charcoal text-cream text-[9px] font-black uppercase rounded-xl disabled:opacity-30 disabled:bg-emerald-muted transition-all"
+                    >
+                      {msg.isSynced ? t.chat.added : t.chat.accept}
+                    </button>
                   </div>
                 )}
               </div>
             </div>
           ))}
-          {isTyping && <div className="flex items-center gap-3 animate-pulse"><div className="size-2 bg-primary rounded-full"></div><div className="text-[10px] uppercase font-black text-charcoal/30">{t.chat.analyzing}</div></div>}
+          {isAiThinking && (
+            <div className="flex items-center gap-3 animate-pulse-gentle">
+              <div className="size-2 bg-primary rounded-full"></div>
+              <div className="text-[10px] uppercase font-black text-charcoal/30">
+                {refining ? t.chat.refining : t.chat.thinking}
+              </div>
+            </div>
+          )}
         </div>
         <div className="px-6 py-6 border-t border-charcoal/5 bg-white/60">
           <div className="flex items-center gap-2">
-            <input className="flex-1 bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 px-6 text-sm font-medium" placeholder={t.chat.placeholder} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()}/>
-            <button onClick={handleSend} className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all group"><span className="material-symbols-outlined">send</span></button>
+            <input 
+              className="flex-1 bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 px-6 text-sm font-medium" 
+              placeholder={t.chat.placeholder} 
+              value={input} 
+              disabled={isAiThinking}
+              onChange={(e) => setInput(e.target.value)} 
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            />
+            <button onClick={handleSend} disabled={isAiThinking || !input.trim()} className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all group disabled:opacity-20">
+              <span className="material-symbols-outlined">send</span>
+            </button>
           </div>
         </div>
       </div>

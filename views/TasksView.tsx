@@ -19,11 +19,12 @@ interface TasksViewProps {
   onDisconnectGoogle: () => void;
   isGoogleConnected: boolean;
   lastSyncTime?: string | null;
+  isSyncing?: boolean;
 }
 
 const TasksView: React.FC<TasksViewProps> = ({ 
   tasks, personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask,
-  onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime
+  onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false
 }) => {
   const t = useMemo(() => getT(language), [language]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -31,7 +32,6 @@ const TasksView: React.FC<TasksViewProps> = ({
   const [showInput, setShowInput] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; visible: boolean } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   const TODAY = new Date().toISOString().split('T')[0];
   const TOMORROW_DATE = new Date();
@@ -79,14 +79,6 @@ const TasksView: React.FC<TasksViewProps> = ({
     }
   }, [feedback]);
 
-  const handleSync = () => {
-    setIsSyncing(true);
-    onSyncGoogle();
-    setTimeout(() => {
-      setIsSyncing(false);
-    }, 1500);
-  };
-
   const handleToggle = (id: string) => {
     const task = tasks.find(t => t.id === id);
     const becomingCompleted = task && !task.completed;
@@ -94,26 +86,12 @@ const TasksView: React.FC<TasksViewProps> = ({
     onToggleTask(id);
 
     if (becomingCompleted) {
-      let message = language === 'en' ? "Excellent work." : "Отличная работа.";
+      let message = t.tasks.feedback.success;
       if (personality.strictness > 60) {
-        message = language === 'en' ? "Task finished. Efficiency is non-negotiable." : "Задача выполнена. Эффективность не обсуждается.";
+        message = t.tasks.feedback.strict;
       } else if (personality.trust > 80) {
-        const sweetMessages = language === 'en' ? [
-          "I'm so proud of you!",
-          "Beautifully handled, friend.",
-          "You're shining today.",
-          "One more win for us!",
-          "I knew you had this."
-        ] : [
-          "Я так горжусь тобой!",
-          "Прекрасно справились, друг.",
-          "Сегодня вы сияете.",
-          "Еще одна победа для нас!",
-          "Я знал, что у вас получится."
-        ];
-        message = sweetMessages[Math.floor(Math.random() * sweetMessages.length)];
-      } else {
-        message = language === 'en' ? "Well done. Keep that momentum up." : "Хорошо сделано. Сохраняйте этот темп.";
+        const warm = t.tasks.feedback.warm;
+        message = warm[Math.floor(Math.random() * warm.length)];
       }
       setFeedback({ message, visible: true });
     }
@@ -121,8 +99,7 @@ const TasksView: React.FC<TasksViewProps> = ({
 
   const handleFail = (id: string) => {
     onFailTask(id);
-    let message = language === 'en' ? "That's okay. Let's reset and try again." : "Ничего страшного. Давайте сбросим настройки и попробуем снова.";
-    setFeedback({ message, visible: true });
+    setFeedback({ message: t.tasks.feedback.fail, visible: true });
   };
 
   const handleAdd = (e: React.FormEvent) => {
@@ -243,8 +220,8 @@ const TasksView: React.FC<TasksViewProps> = ({
              </p>
              {isGoogleConnected && lastSyncTime && (
                <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 border-l border-charcoal/5 pl-4">
-                 <span className="material-symbols-outlined text-[12px]">done_all</span>
-                 {language === 'ru' ? 'Обновлено в' : 'Synced at'} {lastSyncTime}
+                 <span className={`material-symbols-outlined text-[12px] ${isSyncing ? 'animate-spin' : ''}`}>{isSyncing ? 'sync' : 'done_all'}</span>
+                 {isSyncing ? (language === 'ru' ? 'Синхронизация...' : 'Syncing...') : `${language === 'ru' ? 'Обновлено в' : 'Synced at'} ${lastSyncTime}`}
                </p>
              )}
           </div>
@@ -253,7 +230,7 @@ const TasksView: React.FC<TasksViewProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
             <button 
-              onClick={handleSync}
+              onClick={onSyncGoogle}
               disabled={isSyncing}
               className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 isGoogleConnected 

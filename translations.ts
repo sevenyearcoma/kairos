@@ -10,29 +10,21 @@ export const translations = {
       focus: 'Focus',
       assistant: 'Personal Assistant'
     },
-    auth: {
-      connectTitle: 'Personal Intelligence',
-      connectDesc: 'Kairos helps you manage your time effectively with privacy and kindness.',
-      connectBtn: 'Get Started',
-      setupRequired: 'Setup Required',
-      personalActive: 'Personal AI Active'
-    },
     chat: {
       placeholder: 'Tell me your plans...',
-      analyzing: 'Kairos is thinking...',
-      recommendation: 'Secretary Recommendation',
-      syncNow: 'Synchronize Now',
-      insight: 'Kairos Insight',
-      initialMsg: "Good morning. Your personal AI is ready. How shall we manage your time today?",
-      eveningSummaryTitle: 'Evening Summary',
-      generatingSummary: 'Generating your evening summary...'
+      thinking: 'Kairos is planning...',
+      refining: 'Refining details...',
+      initialMsg: (userName: string, assistantName: string) => `Hello, ${userName}! I'm your personal ${assistantName}. Ready to assist with your day.`,
+      error: "I'm having trouble processing your request. Let's try again in a moment.",
+      statusActive: 'Kairos is active',
+      added: 'ADDED',
+      accept: 'ACCEPT'
     },
     settings: {
       title: 'Identity',
       userName: 'Your Name',
       assistantName: 'Assistant Name',
       save: 'Save Identity',
-      memoryCount: 'Stored Memories'
     },
     calendar: {
       linkGoogle: 'Link Google',
@@ -57,34 +49,46 @@ export const translations = {
       abandoned: 'Abandoned Plans',
       upcoming: 'Upcoming',
       completed: 'Completed',
-      noTasks: 'No tasks currently assigned',
-      placeholder: 'Target objective for today?',
+      noTasks: 'No tasks assigned',
+      placeholder: 'Target objective?',
       postpone: 'Move to Tomorrow',
-      abandon: 'Failed - Missed Deadline',
+      abandon: 'Abandoned',
       categories: ['Work', 'Personal', 'Meeting', 'Finance'],
-      routines: 'Daily Rituals & Routines',
-      oneOffs: 'Specific Objectives'
+      routines: 'Daily Rituals',
+      oneOffs: 'Specific Objectives',
+      feedback: {
+        success: "Excellent work.",
+        strict: "Task finished. Efficiency is non-negotiable.",
+        warm: [
+          "I'm so proud of you!",
+          "Beautifully handled, friend.",
+          "You're shining today.",
+          "One more win for us!",
+          "I knew you had this."
+        ],
+        fail: "That's okay. Let's reset and try again."
+      }
     },
     focus: {
       title: 'Focus',
       selectObjective: 'Select an objective',
-      clearAgenda: 'Your agenda is clear.',
+      clearAgenda: 'Agenda clear.',
       intervalComplete: 'Interval Complete',
-      takeBreath: "Take a breath. You've made progress.",
-      markFinished: 'Mark Finished',
-      continue: 'Continue Focus',
-      currentIntention: 'Current Intention',
-      commence: 'Commence',
+      takeBreath: "Take a breath.",
+      markFinished: 'Finish',
+      continue: 'Continue',
+      currentIntention: 'Intention',
+      commence: 'Start',
       pause: 'Pause'
     },
     modal: {
       calendarEvent: 'Calendar Event',
       agendaTask: 'Agenda Task',
       acknowledged: 'Acknowledged',
-      update: 'Update Schedule',
-      notes: 'Contextual Notes & Links',
-      noNotes: 'No additional notes provided.',
-      recurrence: 'Recurrence Pattern',
+      update: 'Update',
+      notes: 'Notes & Links',
+      noNotes: 'No notes.',
+      recurrence: 'Recurrence',
       startDate: 'Start Date',
       timeframe: 'Timeframe',
       category: 'Category',
@@ -100,86 +104,90 @@ export const translations = {
       focus: 'Фокус',
       assistant: 'Личный помощник'
     },
-    auth: {
-      connectTitle: 'Личный Интеллект',
-      connectDesc: 'Кайрос помогает эффективно управлять временем, соблюдая приватность.',
-      connectBtn: 'Начать',
-      setupRequired: 'Нужна настройка',
-      personalActive: 'Личный ИИ активен'
-    },
     chat: {
       placeholder: 'Поделитесь планами...',
-      analyzing: 'Кайрос думает...',
-      recommendation: 'Рекомендация секретаря',
-      syncNow: 'Синхронизировать',
-      insight: 'Инсайт Кайрос',
-      initialMsg: "Доброе утро. Ваш личный ИИ готов. Как мы распределим ваше время сегодня?",
-      eveningSummaryTitle: 'Вечерний итог',
-      generatingSummary: 'Готовлю ваш вечерний итог...'
+      thinking: 'Кайрос планирует...',
+      refining: 'Уточняю детали...',
+      initialMsg: (userName: string, assistantName: string) => `Привет, ${userName}! Я ваш личный ${assistantName}. Готов помочь с делами.`,
+      error: "Извините, возникла ошибка при обработке запроса. Попробуйте еще раз.",
+      statusActive: 'Кайрос активен',
+      added: 'В СПИСКЕ',
+      accept: 'ПОДТВЕРДИТЬ'
     },
     settings: {
       title: 'Личность',
       userName: 'Ваше имя',
       assistantName: 'Имя помощника',
-      save: 'Сохранить личность',
-      memoryCount: 'Сохраненные факты'
+      save: 'Сохранить',
     },
     calendar: {
       linkGoogle: 'Привязать Google',
       linked: 'Привязано',
       objectives: 'Цели',
-      noPlans: 'Планов пока нет',
+      noPlans: 'Планов нет',
       quickAdd: 'Быстрое добавление',
-      addSchedule: 'Добавить в график',
+      addSchedule: 'В график',
       event: 'Событие',
       task: 'Задача',
-      eventTitle: 'Название события?',
-      taskDesc: 'Описание задачи?'
+      eventTitle: 'Название?',
+      taskDesc: 'Описание?'
     },
     tasks: {
       title: 'Цели',
-      activeFor: 'Активно на',
+      activeFor: 'На дату',
       newTask: 'Новая задача',
       cancel: 'Отмена',
-      accept: 'Принять задачу',
+      accept: 'Принять',
       today: 'Сегодня',
       tomorrow: 'Завтра',
-      abandoned: 'Заброшенные планы',
+      abandoned: 'Заброшено',
       upcoming: 'Предстоящие',
       completed: 'Завершено',
-      noTasks: 'Задач пока не назначено',
-      placeholder: 'Ваша цель на сегодня?',
-      postpone: 'Перенести на завтра',
-      abandon: 'Провалено - дедлайн пропущен',
+      noTasks: 'Задач нет',
+      placeholder: 'Ваша цель?',
+      postpone: 'На завтра',
+      abandon: 'Заброшено',
       categories: ['Работа', 'Личное', 'Встреча', 'Финансы'],
-      routines: 'Ежедневные ритуалы и привычки',
-      oneOffs: 'Конкретные цели'
+      routines: 'Ритуалы',
+      oneOffs: 'Конкретные цели',
+      feedback: {
+        success: "Отличная работа.",
+        strict: "Задача выполнена. Эффективность превыше всего.",
+        warm: [
+          "Я так горжусь тобой!",
+          "Прекрасно справились, друг.",
+          "Сегодня вы сияете.",
+          "Еще одна победа для нас!",
+          "I знал, что у вас получится."
+        ],
+        fail: "Ничего страшного. Давайте попробуем снова."
+      }
     },
     focus: {
       title: 'Фокус',
       selectObjective: 'Выберите цель',
-      clearAgenda: 'Ваш список дел пуст.',
+      clearAgenda: 'Список пуст.',
       intervalComplete: 'Интервал завершен',
-      takeBreath: 'Сделайте вдох. Вы продвинулись вперед.',
-      markFinished: 'Завершить задачу',
-      continue: 'Продолжить фокус',
-      currentIntention: 'Текущее намерение',
+      takeBreath: 'Сделайте вдох.',
+      markFinished: 'Завершить',
+      continue: 'Продолжить',
+      currentIntention: 'Намерение',
       commence: 'Начать',
       pause: 'Пауза'
     },
     modal: {
-      calendarEvent: 'Событие календаря',
-      agendaTask: 'Задача из списка',
+      calendarEvent: 'Событие',
+      agendaTask: 'Задача',
       acknowledged: 'Принято',
-      update: 'Обновить график',
-      notes: 'Заметки и ссылки',
-      noNotes: 'Дополнительных заметок нет.',
+      update: 'Обновить',
+      notes: 'Заметки',
+      noNotes: 'Заметок нет.',
       recurrence: 'Повторение',
-      startDate: 'Дата начала',
+      startDate: 'Дата',
       timeframe: 'Время',
       category: 'Категория',
-      dayOfMonth: 'День месяца',
-      chooseDays: 'Выберите дни'
+      dayOfMonth: 'День',
+      chooseDays: 'Дни недели'
     }
   }
 };

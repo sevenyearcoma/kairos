@@ -17,15 +17,15 @@ interface CalendarViewProps {
   onDisconnectGoogle: () => void;
   isGoogleConnected: boolean;
   lastSyncTime?: string | null;
+  isSyncing?: boolean;
 }
 
 const CalendarView: React.FC<CalendarViewProps> = ({ 
-  events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime 
+  events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false 
 }) => {
   const t = useMemo(() => getT(language), [language]);
   const [viewDate, setViewDate] = useState(new Date()); 
   const [selectedDateStr, setSelectedDateStr] = useState(new Date().toISOString().split('T')[0]);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Event | Task | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   
@@ -52,14 +52,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     const dayTasks = tasks.filter(t => isItemOnDate(t, selectedDateStr) && !t.completed && !t.failed);
     return { events: dayEvents, tasks: dayTasks };
   }, [events, tasks, selectedDateStr]);
-
-  const handleSync = () => {
-    setIsSyncing(true);
-    onSyncGoogle();
-    setTimeout(() => {
-      setIsSyncing(false);
-    }, 1500);
-  };
 
   const handleQuickAddSubmit = () => {
     if (!quickAddTitle.trim()) return;
@@ -163,15 +155,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
           {isGoogleConnected && lastSyncTime && (
             <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 ml-1">
-              <span className="material-symbols-outlined text-[12px]">done_all</span>
-              {language === 'ru' ? 'Синхронизировано в' : 'Last synced at'} {lastSyncTime}
+              <span className={`material-symbols-outlined text-[12px] ${isSyncing ? 'animate-spin' : ''}`}>{isSyncing ? 'sync' : 'done_all'}</span>
+              {isSyncing ? (language === 'ru' ? 'Синхронизация...' : 'Syncing...') : `${language === 'ru' ? 'Синхронизировано в' : 'Last synced at'} ${lastSyncTime}`}
             </p>
           )}
         </div>
         <div className="flex gap-3">
           <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
             <button 
-              onClick={handleSync}
+              onClick={onSyncGoogle}
               disabled={isSyncing}
               className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 isGoogleConnected 
@@ -300,16 +292,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     {filteredItems.tasks.map((task) => (
                       <div 
                         key={task.id} 
-                        // Fix: Change 'setSelectedTask' to 'setSelectedItem'
                         onClick={() => setSelectedItem(task)}
                         className="group flex items-center gap-5 p-6 bg-white border border-charcoal/5 rounded-[2.5rem] shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer"
                       >
                         <div className="size-10 bg-beige-soft rounded-xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
-                          <span className="material-symbols-outlined text-[20px]">{task.recurrence && task.recurrence !== 'none' ? 'sync' : 'task_alt'}</span>
+                          <span className="material-symbols-outlined text-[20px]">{task.source === 'google' ? 'cloud' : (task.recurrence && task.recurrence !== 'none' ? 'sync' : 'task_alt')}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="text-base font-bold text-charcoal truncate mb-1">{task.title}</h4>
-                          <span className="text-[10px] font-black uppercase text-charcoal/20 tracking-[0.2em]">{task.category}</span>
+                          <span className="text-[10px] font-black uppercase text-charcoal/20 tracking-[0.2em]">{task.category} {task.source === 'google' ? '• GOOGLE' : ''}</span>
                         </div>
                         <span className="material-symbols-outlined text-charcoal/10 group-hover:text-charcoal/30 transition-colors">chevron_right</span>
                       </div>
