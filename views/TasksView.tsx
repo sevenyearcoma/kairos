@@ -1,17 +1,18 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Personality, Language } from '../types';
+import { Task, Event, Personality, Language, TaskStatus } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 
 interface TasksViewProps {
   tasks: Task[];
+  events?: Event[];
   personality: Personality;
   language: Language;
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
-  onEditTask?: (id: string, updates: any) => void;
+  onEditTask: (id: string, updates: Partial<Task>) => void;
   onAddTask: (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence']) => void;
   onRescheduleTask: (taskId: string, newDate: string) => void;
   onFailTask: (id: string) => void;
@@ -23,7 +24,7 @@ interface TasksViewProps {
 }
 
 const TasksView: React.FC<TasksViewProps> = ({ 
-  tasks, personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask,
+  tasks, events = [], personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask,
   onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false
 }) => {
   const t = useMemo(() => getT(language), [language]);
@@ -31,43 +32,65 @@ const TasksView: React.FC<TasksViewProps> = ({
   const [newTaskCategory, setNewTaskCategory] = useState(t.tasks.categories[0]);
   const [showInput, setShowInput] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; visible: boolean } | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Task | Event | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban'); // Default to Kanban per user request implies focus on it
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
   const TODAY = new Date().toISOString().split('T')[0];
   const TOMORROW_DATE = new Date();
   TOMORROW_DATE.setDate(TOMORROW_DATE.getDate() + 1);
   const TOMORROW = TOMORROW_DATE.toISOString().split('T')[0];
 
-  const groupedTasks = useMemo(() => {
+  // Helper to normalize status for old data
+  const getTaskStatus = (task: Task): TaskStatus => {
+    if (task.status) return task.status;
+    if (task.completed) return 'done';
+    if (task.failed) return 'planning'; // Failed tasks go back to backlog/planning
+    if (isItemOnDate(task, TODAY)) return 'todo';
+    return 'planning';
+  };
+
+  const groupedItems = useMemo(() => {
+    // For List View
     const routines: Task[] = [];
-    const today: Task[] = [];
-    const tomorrow: Task[] = [];
-    const later: Task[] = [];
-    const completed: Task[] = [];
-    const failed: Task[] = [];
+    const todayTasks: Task[] = [];
+    const tomorrowTasks: Task[] = [];
+    const laterTasks: Task[] = [];
+    const completedTasks: Task[] = [];
+    const failedTasks: Task[] = [];
+    
+    // For Kanban View
+    const kanban = {
+      planning: [] as Task[],
+      todo: [] as Task[],
+      in_progress: [] as Task[],
+      done: [] as Task[]
+    };
 
     tasks.forEach(t => {
-      if (t.completed) {
-        completed.push(t);
-      } else if (t.failed) {
-        failed.push(t);
-      } else if (t.recurrence && t.recurrence !== 'none') {
+      // List View Logic
+      if (t.completed) completedTasks.push(t);
+      else if (t.failed) failedTasks.push(t);
+      else if (t.recurrence && t.recurrence !== 'none') {
         routines.push(t);
-        if (isItemOnDate(t, TODAY)) {
-          today.push(t);
-        }
-      } else if (isItemOnDate(t, TODAY)) {
-        today.push(t);
-      } else if (isItemOnDate(t, TOMORROW)) {
-        tomorrow.push(t);
-      } else {
-        later.push(t);
-      }
+        if (isItemOnDate(t, TODAY)) todayTasks.push(t);
+      } else if (isItemOnDate(t, TODAY)) todayTasks.push(t);
+      else if (isItemOnDate(t, TOMORROW)) tomorrowTasks.push(t);
+      else laterTasks.push(t);
+
+      // Kanban View Logic
+      const status = getTaskStatus(t);
+      kanban[status].push(t);
     });
 
-    const todayOneOffs = today.filter(t => !t.recurrence || t.recurrence === 'none');
+    const todayOneOffs = todayTasks.filter(t => !t.recurrence || t.recurrence === 'none');
 
-    return { routines, todayOneOffs, tomorrow, later, completed, failed };
+    return { 
+      // List
+      routines, todayOneOffs, tomorrowTasks, laterTasks, completedTasks, failedTasks,
+      // Kanban
+      kanban
+    };
   }, [tasks, TODAY, TOMORROW]);
 
   useEffect(() => {
@@ -81,15 +104,15 @@ const TasksView: React.FC<TasksViewProps> = ({
 
   const handleToggle = (id: string) => {
     const task = tasks.find(t => t.id === id);
-    const becomingCompleted = task && !task.completed;
+    if (!task) return;
     
+    // Simple toggle for List View
     onToggleTask(id);
 
-    if (becomingCompleted) {
+    if (!task.completed) {
       let message = t.tasks.feedback.success;
-      if (personality.strictness > 60) {
-        message = t.tasks.feedback.strict;
-      } else if (personality.trust > 80) {
+      if (personality.strictness > 60) message = t.tasks.feedback.strict;
+      else if (personality.trust > 80) {
         const warm = t.tasks.feedback.warm;
         message = warm[Math.floor(Math.random() * warm.length)];
       }
@@ -115,17 +138,70 @@ const TasksView: React.FC<TasksViewProps> = ({
     onRescheduleTask(taskId, TOMORROW);
   };
 
-  const renderTask = (task: Task) => (
+  // --- DnD Handlers ---
+  const onDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.setData('text/plain', taskId);
+    e.dataTransfer.effectAllowed = 'move';
+    // Transparent ghost image if desired, standard behavior is usually fine
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary to allow dropping
+  };
+
+  const onDrop = (e: React.DragEvent, targetStatus: TaskStatus) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (!taskId) return;
+
+    setDraggedTaskId(null);
+
+    // Find the task
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (getTaskStatus(task) === targetStatus) return;
+
+    // Logic for updating task based on column
+    const updates: Partial<Task> = { status: targetStatus };
+
+    if (targetStatus === 'done') {
+      updates.completed = true;
+      let message = t.tasks.feedback.success;
+      setFeedback({ message, visible: true });
+    } else {
+      updates.completed = false;
+      // If moving to ToDo or InProgress, imply it's for today if it wasn't
+      if ((targetStatus === 'todo' || targetStatus === 'in_progress') && !isItemOnDate(task, TODAY)) {
+        updates.date = TODAY;
+      }
+    }
+    
+    onEditTask(taskId, updates);
+  };
+
+  const columns: { id: TaskStatus; label: string; colorClass: string; items: Task[] }[] = [
+    { id: 'planning', label: t.tasks.kanban.planning, colorClass: 'bg-charcoal/5', items: groupedItems.kanban.planning },
+    { id: 'todo', label: t.tasks.kanban.todo, colorClass: 'bg-primary/10', items: groupedItems.kanban.todo },
+    { id: 'in_progress', label: t.tasks.kanban.inProgress, colorClass: 'bg-primary/20', items: groupedItems.kanban.in_progress },
+    { id: 'done', label: t.tasks.kanban.done, colorClass: 'bg-emerald-muted/20', items: groupedItems.kanban.done },
+  ];
+
+  const renderTaskCard = (task: Task, isKanban = false) => (
     <div 
-      key={task.id} 
-      className={`group flex items-center gap-4 p-5 rounded-3xl transition-all border cursor-pointer ${
+      key={task.id}
+      draggable={isKanban}
+      onDragStart={(e) => isKanban && onDragStart(e, task.id)}
+      className={`group flex items-center gap-4 p-5 rounded-[1.5rem] transition-all border cursor-pointer select-none active:scale-95 ${
+        task.id === draggedTaskId ? 'opacity-50 scale-95 shadow-none border-dashed' : 
         task.completed 
-          ? 'bg-black/[0.02] opacity-60 border-charcoal/5 scale-[0.98]' 
+          ? 'bg-white/50 opacity-60 border-charcoal/5' 
           : task.failed 
           ? 'bg-red-50/50 border-red-100 opacity-80'
           : 'bg-white hover:shadow-xl hover:shadow-charcoal/5 border-charcoal/5'
       }`}
-      onClick={() => setSelectedTask(task)}
+      onClick={() => setSelectedItem(task)}
     >
       <div 
         onClick={(e) => { e.stopPropagation(); if (!task.failed) handleToggle(task.id); }}
@@ -140,64 +216,42 @@ const TasksView: React.FC<TasksViewProps> = ({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-           <h3 className={`text-base font-bold truncate text-charcoal transition-all ${task.completed ? 'line-through text-charcoal/30' : task.failed ? 'text-red-900/40' : ''}`}>
+           <h3 className={`text-sm font-bold truncate text-charcoal transition-all ${task.completed ? 'line-through text-charcoal/30' : task.failed ? 'text-red-900/40' : ''}`}>
              {task.title}
            </h3>
            {task.recurrence && task.recurrence !== 'none' && (
              <span className="material-symbols-outlined text-[14px] text-primary/40">sync</span>
            )}
-           {task.source === 'google' && (
-             <div className="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
-               <span className="material-symbols-outlined text-[11px]">task</span>
-             </div>
-           )}
         </div>
         <div className="flex items-center gap-3 mt-1">
-          <span className={`text-[11px] font-bold uppercase tracking-tighter ${task.completed ? 'text-charcoal/20' : task.failed ? 'text-red-300' : 'text-primary/80'}`}>
+          <span className={`text-[10px] font-bold uppercase tracking-tighter ${task.completed ? 'text-charcoal/20' : task.failed ? 'text-red-300' : 'text-primary/80'}`}>
             {task.category}
           </span>
           {task.rescheduleCount && task.rescheduleCount > 0 && (
-            <span className="text-[10px] bg-red-50 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">
-              {language === 'ru' ? 'Перенесено' : 'Postponed'} x{task.rescheduleCount}
+            <span className="text-[9px] bg-red-50 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">
+              Postponed x{task.rescheduleCount}
             </span>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        {!task.completed && !task.failed && (
-          <>
+      {!isKanban && (
+        <div className="flex items-center gap-1">
             <button 
-              onClick={(e) => { e.stopPropagation(); handlePostpone(task.id); }}
-              className="opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-all p-2 text-charcoal/40 hover:text-charcoal"
-              title={t.tasks.postpone}
+              onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+              className="opacity-0 group-hover:opacity-30 hover:!opacity-100 transition-all p-2 text-charcoal/40 hover:text-red-500"
             >
-              <span className="material-symbols-outlined text-lg">event_repeat</span>
+              <span className="material-symbols-outlined text-lg">delete</span>
             </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); handleFail(task.id); }}
-              className="opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-all p-2 text-charcoal/40 hover:text-red-500"
-              title={t.tasks.abandon}
-            >
-              <span className="material-symbols-outlined text-lg">cancel</span>
-            </button>
-          </>
-        )}
-        <button 
-          onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
-          className="opacity-0 group-hover:opacity-30 hover:!opacity-100 transition-all p-2 text-charcoal/40 hover:text-red-500"
-          title="Delete"
-        >
-          <span className="material-symbols-outlined text-lg">delete</span>
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 
   return (
-    <div className="space-y-12 pb-32 md:pb-0 px-4 md:px-0 relative">
+    <div className="space-y-8 pb-32 md:pb-0 px-4 md:px-0 relative h-full flex flex-col">
       <ItemDetailModal 
-        item={selectedTask} 
-        onClose={() => setSelectedTask(null)} 
+        item={selectedItem} 
+        onClose={() => setSelectedItem(null)} 
         onEdit={onEditTask} 
         language={language}
       />
@@ -211,7 +265,7 @@ const TasksView: React.FC<TasksViewProps> = ({
         </div>
       )}
 
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-charcoal">{t.tasks.title}</h1>
           <div className="flex items-center gap-4">
@@ -228,6 +282,23 @@ const TasksView: React.FC<TasksViewProps> = ({
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
+            <button 
+              onClick={() => setViewMode('list')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'list' ? 'bg-white text-charcoal shadow-md' : 'text-charcoal/40 hover:text-charcoal'}`}
+            >
+              <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+              <span className="hidden sm:inline">{t.tasks.viewList}</span>
+            </button>
+            <button 
+              onClick={() => setViewMode('kanban')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'kanban' ? 'bg-white text-charcoal shadow-md' : 'text-charcoal/40 hover:text-charcoal'}`}
+            >
+              <span className="material-symbols-outlined text-[18px]">view_kanban</span>
+              <span className="hidden sm:inline">{t.tasks.viewKanban}</span>
+            </button>
+          </div>
+
           <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
             <button 
               onClick={onSyncGoogle}
@@ -241,7 +312,7 @@ const TasksView: React.FC<TasksViewProps> = ({
               <span className={`material-symbols-outlined text-[16px] ${isSyncing ? 'animate-spin' : ''}`}>
                 {isGoogleConnected ? 'sync' : 'cloud_off'}
               </span>
-              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC TASKS') : (language === 'ru' ? 'СВЯЗАТЬ GOOGLE' : 'LINK GOOGLE')}
+              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC') : (language === 'ru' ? 'GOOGLE' : 'LINK')}
             </button>
             {isGoogleConnected && (
               <button 
@@ -265,7 +336,7 @@ const TasksView: React.FC<TasksViewProps> = ({
       </header>
 
       {showInput && (
-        <form onSubmit={handleAdd} className="bg-white p-6 rounded-[2rem] border border-primary/20 shadow-xl shadow-primary/5 animate-in slide-in-from-top-4 duration-300">
+        <form onSubmit={handleAdd} className="bg-white p-6 rounded-[2rem] border border-primary/20 shadow-xl shadow-primary/5 animate-in slide-in-from-top-4 duration-300 shrink-0">
            <div className="space-y-4">
               <input 
                 autoFocus
@@ -299,85 +370,116 @@ const TasksView: React.FC<TasksViewProps> = ({
         </form>
       )}
 
-      <div className="space-y-10">
-        {groupedTasks.routines.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xs font-extrabold uppercase tracking-widest text-primary/60">
-                {t.tasks.routines}
-              </h2>
-              <div className="flex-1 h-[1px] bg-primary/10"></div>
-            </div>
-            <div className="grid lg:grid-cols-2 gap-3">
-              {groupedTasks.routines.map(renderTask)}
-            </div>
-          </section>
-        )}
-
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-              {t.tasks.oneOffs} • {t.tasks.today}
-            </h2>
-            <div className="flex-1 h-[1px] bg-charcoal/5"></div>
-          </div>
-          <div className="grid gap-3">
-            {groupedTasks.todayOneOffs.length > 0 ? groupedTasks.todayOneOffs.map(renderTask) : (
-              <div className="py-8 text-center border-2 border-dashed border-charcoal/5 rounded-[2rem]">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-charcoal/20">{t.tasks.noTasks}</p>
-              </div>
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+        {viewMode === 'list' ? (
+          <div className="space-y-10 pb-12">
+             {groupedItems.routines.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-primary/60">
+                    {t.tasks.routines}
+                  </h2>
+                  <div className="flex-1 h-[1px] bg-primary/10"></div>
+                </div>
+                <div className="grid lg:grid-cols-2 gap-3">
+                  {groupedItems.routines.map(t => renderTaskCard(t))}
+                </div>
+              </section>
             )}
+
+            <section className="space-y-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
+                  {t.tasks.oneOffs} • {t.tasks.today}
+                </h2>
+                <div className="flex-1 h-[1px] bg-charcoal/5"></div>
+              </div>
+              <div className="grid gap-3">
+                {groupedItems.todayOneOffs.length > 0 ? groupedItems.todayOneOffs.map(t => renderTaskCard(t)) : (
+                  <div className="py-8 text-center border-2 border-dashed border-charcoal/5 rounded-[2rem]">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-charcoal/20">{t.tasks.noTasks}</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {groupedItems.tomorrowTasks.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
+                    {t.tasks.tomorrow}
+                  </h2>
+                  <div className="flex-1 h-[1px] bg-charcoal/5"></div>
+                </div>
+                <div className="grid gap-3">
+                  {groupedItems.tomorrowTasks.map(t => renderTaskCard(t))}
+                </div>
+              </section>
+            )}
+
+            {groupedItems.failedTasks.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-red-300">{t.tasks.abandoned}</h2>
+                  <div className="flex-1 h-[1px] bg-red-100"></div>
+                </div>
+                <div className="grid gap-3">
+                  {groupedItems.failedTasks.map(t => renderTaskCard(t))}
+                </div>
+              </section>
+            )}
+
+            <div className="grid lg:grid-cols-2 gap-10">
+              {groupedItems.laterTasks.length > 0 && (
+                <section className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.upcoming}</h2>
+                  </div>
+                  <div className="grid gap-3">
+                    {groupedItems.laterTasks.map(t => renderTaskCard(t))}
+                  </div>
+                </section>
+              )}
+              {groupedItems.completedTasks.length > 0 && (
+                <section className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.completed}</h2>
+                  </div>
+                  <div className="grid gap-3">
+                    {groupedItems.completedTasks.map(t => renderTaskCard(t))}
+                  </div>
+                </section>
+              )}
+            </div>
           </div>
-        </section>
-
-        {groupedTasks.tomorrow.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-                {t.tasks.tomorrow}
-              </h2>
-              <div className="flex-1 h-[1px] bg-charcoal/5"></div>
-            </div>
-            <div className="grid gap-3">
-              {groupedTasks.tomorrow.map(renderTask)}
-            </div>
-          </section>
+        ) : (
+          <div className="flex h-full pb-6 overflow-x-auto snap-x snap-mandatory gap-4 md:gap-6 px-1">
+             {columns.map(col => (
+               <div 
+                 key={col.id} 
+                 onDragOver={onDragOver}
+                 onDrop={(e) => onDrop(e, col.id)}
+                 className={`flex-col shrink-0 w-[85vw] md:w-80 h-full rounded-[2.5rem] p-4 flex snap-center transition-all ${col.colorClass} border border-transparent hover:border-charcoal/5`}
+               >
+                  <div className="flex items-center gap-2 mb-4 px-2 py-2">
+                     <div className={`size-2 rounded-full ${col.id === 'todo' ? 'bg-primary' : 'bg-charcoal/20'}`}></div>
+                     <h3 className="text-xs font-black uppercase tracking-widest text-charcoal/60">{col.label}</h3>
+                     <span className="text-[10px] font-bold text-charcoal/20 ml-auto bg-white/50 px-2 py-1 rounded-full">{col.items.length}</span>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto space-y-3 scrollbar-hide pr-1 min-h-0">
+                     {col.items.map(t => renderTaskCard(t, true))}
+                     {col.items.length === 0 && (
+                       <div className="h-24 flex items-center justify-center text-[10px] text-charcoal/10 font-black uppercase tracking-widest border-2 border-dashed border-charcoal/5 rounded-2xl">
+                         Empty
+                       </div>
+                     )}
+                  </div>
+               </div>
+             ))}
+          </div>
         )}
-
-        {groupedTasks.failed.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xs font-extrabold uppercase tracking-widest text-red-300">{t.tasks.abandoned}</h2>
-              <div className="flex-1 h-[1px] bg-red-100"></div>
-            </div>
-            <div className="grid gap-3">
-              {groupedTasks.failed.map(renderTask)}
-            </div>
-          </section>
-        )}
-
-        <div className="grid lg:grid-cols-2 gap-10">
-          {groupedTasks.later.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.upcoming}</h2>
-              </div>
-              <div className="grid gap-3">
-                {groupedTasks.later.map(renderTask)}
-              </div>
-            </section>
-          )}
-          {groupedTasks.completed.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.completed}</h2>
-              </div>
-              <div className="grid gap-3">
-                {groupedTasks.completed.map(renderTask)}
-              </div>
-            </section>
-          )}
-        </div>
       </div>
     </div>
   );

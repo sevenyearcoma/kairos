@@ -17,22 +17,22 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
 
   const DAYS_OF_WEEK = useMemo(() => language === 'ru' 
     ? [
-        { label: 'Вс', value: 0 },
         { label: 'Пн', value: 1 },
         { label: 'Вт', value: 2 },
         { label: 'Ср', value: 3 },
         { label: 'Чт', value: 4 },
         { label: 'Пт', value: 5 },
         { label: 'Сб', value: 6 },
+        { label: 'Вс', value: 0 },
       ]
     : [
-        { label: 'S', value: 0 },
         { label: 'M', value: 1 },
         { label: 'T', value: 2 },
         { label: 'W', value: 3 },
         { label: 'T', value: 4 },
         { label: 'F', value: 5 },
         { label: 'S', value: 6 },
+        { label: 'S', value: 0 },
       ], [language]);
 
   useEffect(() => {
@@ -153,8 +153,8 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
               {isEditing ? (
                 isEvent ? (
                   <div className="flex gap-1">
-                    <input className="text-[10px] w-1/2 bg-beige-soft border-none rounded-lg" value={formData.startTime} onChange={(e) => setFormData({ ...formData, startTime: e.target.value })} />
-                    <input className="text-[10px] w-1/2 bg-beige-soft border-none rounded-lg" value={formData.endTime} onChange={(e) => setFormData({ ...formData, endTime: e.target.value })} />
+                    <input type="time" className="text-[10px] w-1/2 bg-beige-soft border-none rounded-lg" value={formData.startTime} onChange={(e) => setFormData({ ...formData, startTime: e.target.value })} />
+                    <input type="time" className="text-[10px] w-1/2 bg-beige-soft border-none rounded-lg" value={formData.endTime} onChange={(e) => setFormData({ ...formData, endTime: e.target.value })} />
                   </div>
                 ) : (
                   <input className="text-sm font-bold text-charcoal w-full bg-beige-soft border-none rounded-lg" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />

@@ -30,6 +30,8 @@ export interface Event {
   dayOfMonth?: number;
 }
 
+export type TaskStatus = 'planning' | 'todo' | 'in_progress' | 'done';
+
 export interface Task {
   id: string;
   title: string;
@@ -47,6 +49,7 @@ export interface Task {
   estimatedMinutes?: number; 
   source?: 'local' | 'google';
   externalId?: string;
+  status?: TaskStatus;
 }
 
 export interface Personality {

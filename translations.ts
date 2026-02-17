@@ -56,6 +56,18 @@ export const translations = {
       categories: ['Work', 'Personal', 'Meeting', 'Finance'],
       routines: 'Daily Rituals',
       oneOffs: 'Specific Objectives',
+      viewList: 'List View',
+      viewKanban: 'Board View',
+      colBacklog: 'Backlog',
+      colToday: 'Today',
+      colTomorrow: 'Tomorrow',
+      colDone: 'Done',
+      kanban: {
+        planning: 'Planning',
+        todo: 'To Do',
+        inProgress: 'In Progress',
+        done: 'Done'
+      },
       feedback: {
         success: "Excellent work.",
         strict: "Task finished. Efficiency is non-negotiable.",
@@ -150,6 +162,18 @@ export const translations = {
       categories: ['Работа', 'Личное', 'Встреча', 'Финансы'],
       routines: 'Ритуалы',
       oneOffs: 'Конкретные цели',
+      viewList: 'Список',
+      viewKanban: 'Доска',
+      colBacklog: 'Бэклог',
+      colToday: 'Сегодня',
+      colTomorrow: 'Завтра',
+      colDone: 'Готово',
+      kanban: {
+        planning: 'План',
+        todo: 'Сделать',
+        inProgress: 'В процессе',
+        done: 'Готово'
+      },
       feedback: {
         success: "Отличная работа.",
         strict: "Задача выполнена. Эффективность превыше всего.",

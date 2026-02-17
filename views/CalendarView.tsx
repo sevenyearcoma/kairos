@@ -41,7 +41,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   }, [currentYear, currentMonthIdx]);
 
   const firstDayOfMonth = useMemo(() => {
-    return new Date(currentYear, currentMonthIdx, 1).getDay();
+    const day = new Date(currentYear, currentMonthIdx, 1).getDay();
+    // Monday start: Sun(0) -> 6, Mon(1) -> 0, etc.
+    return day === 0 ? 6 : day - 1;
   }, [currentYear, currentMonthIdx]);
 
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
@@ -60,8 +62,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       onAddEvent({
         title: quickAddTitle,
         date: selectedDateStr,
-        startTime: '10:00 AM',
-        endTime: '11:00 AM',
+        startTime: '10:00',
+        endTime: '11:00',
         type: 'work',
         location: 'Office'
       });
@@ -90,8 +92,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const totalItemsCount = filteredItems.events.length + filteredItems.tasks.length;
 
   const weekDays = language === 'ru' 
-    ? ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    ? ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div className="space-y-12 pb-32 md:pb-0 h-full relative">

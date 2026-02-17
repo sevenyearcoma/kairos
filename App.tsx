@@ -96,8 +96,9 @@ const App: React.FC = () => {
       const googleEvents: Event[] = (calendarData.items || []).map((item: any) => {
         const start = item.start.dateTime || item.start.date;
         const date = start.split('T')[0];
-        const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day';
-        const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        // Use 24h format for sync
+        const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : 'All Day';
+        const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         return {
           id: `google-${item.id}`,
           externalId: item.id,
@@ -117,12 +118,23 @@ const App: React.FC = () => {
       const tasksData = await tasksResponse.json();
       const googleTasks: Task[] = (tasksData.items || []).filter((item: any) => item.title).map((item: any) => {
         const date = item.due ? item.due.split('T')[0] : TODAY;
-        return { id: `google-${item.id}`, externalId: item.id, title: item.title, category: 'Work', date, time: '09:00 AM', completed: item.status === 'completed', description: item.notes, source: 'google' };
+        return { 
+          id: `google-${item.id}`, 
+          externalId: item.id, 
+          title: item.title, 
+          category: 'Work', 
+          date, 
+          time: '09:00', 
+          completed: item.status === 'completed', 
+          description: item.notes, 
+          source: 'google',
+          status: item.status === 'completed' ? 'done' : (date === TODAY ? 'todo' : 'planning')
+        };
       });
 
       setEvents(prev => [...prev.filter(e => e.source !== 'google'), ...googleEvents]);
       setTasks(prev => [...prev.filter(t => t.source !== 'google'), ...googleTasks]);
-      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       setLastSyncTime(now);
       localStorage.setItem('kairos_last_sync', now);
       setIsGoogleConnected(true);
@@ -211,8 +223,8 @@ const App: React.FC = () => {
       id: newId, 
       title: event.title || 'Untitled', 
       date: event.date || TODAY, 
-      startTime: event.startTime || '10:00 AM', 
-      endTime: event.endTime || '11:00 AM', 
+      startTime: event.startTime || '10:00', 
+      endTime: event.endTime || '11:00', 
       type: event.type || 'work', 
       source: 'local',
       ...event 
@@ -221,8 +233,24 @@ const App: React.FC = () => {
   };
 
   const handleAddTask = async (title: string, category: string, date: string, description?: string) => {
-    const newTask: Task = { id: Date.now().toString(), title, category, date, time: '09:00 AM', completed: false, description, recurrence: 'none', source: 'local' };
+    const isToday = date === TODAY;
+    const newTask: Task = { 
+      id: Date.now().toString(), 
+      title, 
+      category, 
+      date, 
+      time: '09:00', 
+      completed: false, 
+      description, 
+      recurrence: 'none', 
+      source: 'local',
+      status: isToday ? 'todo' : 'planning' 
+    };
     setTasks(prev => [...prev, newTask]);
+  };
+
+  const handleEditTask = (id: string, updates: Partial<Task>) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
   };
 
   const handleNewChat = () => {
@@ -306,7 +334,25 @@ const App: React.FC = () => {
                 /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">Initializing Secretary...</div>
               } />
               <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} isSyncing={isSyncing} />} />
-              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} isSyncing={isSyncing} />} />
+              <Route path="/tasks" element={
+                <TasksView 
+                  tasks={tasks} 
+                  events={events} 
+                  personality={personality} 
+                  language={language} 
+                  onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed, status: !t.completed ? 'done' : 'todo'} : t))} 
+                  onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} 
+                  onAddTask={handleAddTask} 
+                  onEditTask={handleEditTask}
+                  onRescheduleTask={() => {}} 
+                  onFailTask={() => {}} 
+                  onSyncGoogle={handleSyncGoogle} 
+                  onDisconnectGoogle={handleDisconnectGoogle} 
+                  isGoogleConnected={isGoogleConnected} 
+                  lastSyncTime={lastSyncTime} 
+                  isSyncing={isSyncing} 
+                />
+              } />
               <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={() => {}} />} />
             </Routes>
           </div>

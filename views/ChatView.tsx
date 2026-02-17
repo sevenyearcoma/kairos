@@ -117,8 +117,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       // --- Context Construction ---
       const now = new Date();
       const offset = now.getTimezoneOffset() * 60000;
-      const localDate = new Date(now.getTime() - offset);
-      const currentTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      // Use 24h format for context
+      const currentTimeStr = new Date(now.getTime() - offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const currentDayName = dayNames[now.getDay()];
 
@@ -146,10 +146,11 @@ const ChatView: React.FC<ChatViewProps> = ({
         CRITICAL RULES FOR INTERACTION:
         1. **CONTEXT IS KING**: If the user says "7pm" or "same time", look at the HISTORY to find what event they are talking about (e.g., Gym, Meeting). 
         2. **GUESS & ANTICIPATE**: Do NOT ask clarifying questions for minor details.
-           - If Time is missing -> Guess a reasonable time (e.g., 9AM for work, 6PM for gym) or use the current time.
+           - If Time is missing -> Guess a reasonable time (e.g., 09:00 for work, 18:00 for gym) or use the current time.
            - If Title is missing -> Infer it from context (e.g., "Gym", "Call", "Task").
            - If Duration is missing -> Assume 1 hour.
            - If Date is missing -> Assume Today (if time is future) or Tomorrow.
+           - **USE 24-HOUR FORMAT** (e.g. 13:00, 20:30) for all times.
         3. **ONLY ASK IF IMPOSSIBLE**: Only ask a question if the request is completely gibberish or you absolutely cannot infer the intent from History.
         
         OUTPUT STRATEGY:
@@ -184,10 +185,11 @@ const ChatView: React.FC<ChatViewProps> = ({
         - **recurrence**: Detect "every tuesday", "weekly", "daily". 
         - **daysOfWeek**: If "every Tuesday and Thursday", output [2, 4]. (0=Sun, 1=Mon...).
         - **date**: Must be YYYY-MM-DD. Calculate the *next* occurrence of the day mentioned relative to ${todayStr}.
+        - **TIMES**: MUST be 24-hour format (e.g. "14:00", "09:30"). Do NOT use AM/PM.
         
         OUTPUT SCHEMA (JSON Only):
         {
-          "reply": "Confirmation message. Be brief. State what you scheduled (e.g. 'Added Gym for Tuesdays at 7pm').",
+          "reply": "Confirmation message. Be brief. State what you scheduled (e.g. 'Added Gym for Tuesdays at 19:00').",
           "intent": "create_event" | "create_task" | "general" | "update_prefs",
           "details": { ...event/task fields... },
           "kairosInsight": { "type": "tip/encouragement", "message": "Short wise thought" } (Optional)
@@ -229,8 +231,8 @@ const ChatView: React.FC<ChatViewProps> = ({
                 properties: {
                   title: { type: Type.STRING },
                   date: { type: Type.STRING, description: "YYYY-MM-DD" },
-                  startTime: { type: Type.STRING, description: "HH:MM AM/PM" },
-                  endTime: { type: Type.STRING, description: "HH:MM AM/PM" },
+                  startTime: { type: Type.STRING, description: "HH:MM (24h)" },
+                  endTime: { type: Type.STRING, description: "HH:MM (24h)" },
                   category: { type: Type.STRING },
                   description: { type: Type.STRING },
                   recurrence: { type: Type.STRING, enum: ["none", "daily", "weekly", "weekdays", "specific_days", "monthly"] },
@@ -258,8 +260,8 @@ const ChatView: React.FC<ChatViewProps> = ({
         draftEventData = {
           ...result.details,
           date: result.details.date || todayStr,
-          startTime: result.details.startTime || '09:00 AM',
-          endTime: result.details.endTime || '10:00 AM',
+          startTime: result.details.startTime || '09:00',
+          endTime: result.details.endTime || '10:00',
           title: result.details.title || 'New Event'
         };
       } else if (result.intent === 'create_task' && result.details) {
@@ -306,8 +308,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       onAddEvent({
         title: msg.draftEvent.title || 'Untitled Event',
         date: msg.draftEvent.date || todayStr,
-        startTime: msg.draftEvent.startTime || '09:00 AM',
-        endTime: msg.draftEvent.endTime || '10:00 AM',
+        startTime: msg.draftEvent.startTime || '09:00',
+        endTime: msg.draftEvent.endTime || '10:00',
         description: msg.draftEvent.description,
         recurrence: msg.draftEvent.recurrence as any || 'none',
         daysOfWeek: msg.draftEvent.daysOfWeek,
