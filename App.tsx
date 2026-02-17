@@ -111,15 +111,14 @@ const App: React.FC = () => {
           setChats(prev => [{ id: newChatId, title: language === 'en' ? 'Evening Summary' : 'Вечерний итог', messages: [{ id: 'summary-1', role: 'assistant', content: summaryText }], createdAt: Date.now() }, ...prev]);
           setActiveChatId(newChatId);
           try {
-            // Updated to use 'contents' and 'embeddings' as per type definition errors
             const embedRes = await ai.models.embedContent({ 
               model: 'gemini-embedding-001', 
-              contents: [{ parts: [{ text: `Summary (${TODAY}): ${summaryText}` }] }] 
+              content: { parts: [{ text: `Summary (${TODAY}): ${summaryText}` }] } 
             });
-            if (embedRes.embeddings?.values) {
+            if (embedRes.embedding?.values) {
               handleAddMemoryItem({ 
                 text: `On ${TODAY}, I summarized: ${summaryText.substring(0, 100)}...`, 
-                embedding: embedRes.embeddings.values, 
+                embedding: embedRes.embedding.values, 
                 timestamp: Date.now() 
               });
             }
@@ -171,9 +170,13 @@ const App: React.FC = () => {
         // @ts-ignore
         tokenClient.current = google.accounts.oauth2.initTokenClient({
           client_id: '1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com',
-          scope: 'https://www.googleapis.com/calendar.readonly',
+          // Corrected scope: Added /auth/ segment
+          scope: 'https://www.googleapis.com/auth/calendar.readonly',
           callback: async (response: any) => {
-            if (response.error) return;
+            if (response.error) {
+              console.error("Google Auth Error:", response);
+              return;
+            }
             localStorage.setItem('kairos_google_token', response.access_token);
             setIsGoogleConnected(true);
             await fetchGoogleEvents(response.access_token);
@@ -181,13 +184,27 @@ const App: React.FC = () => {
         });
       }
     };
-    initGIS();
+
+    // Robust library loading check
+    const checkInterval = setInterval(() => {
+      // @ts-ignore
+      if (typeof google !== 'undefined' && google.accounts) {
+        initGIS();
+        clearInterval(checkInterval);
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
   }, []);
 
   const handleSyncGoogle = useCallback(() => {
     const token = localStorage.getItem('kairos_google_token');
-    if (token) fetchGoogleEvents(token);
-    else if (tokenClient.current) tokenClient.current.requestAccessToken({ prompt: 'consent' });
+    if (token) {
+      fetchGoogleEvents(token);
+    } else if (tokenClient.current) {
+      // Requesting fresh access token
+      tokenClient.current.requestAccessToken(); 
+    }
   }, []);
 
   useEffect(() => {

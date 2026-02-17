@@ -127,13 +127,13 @@ const ChatView: React.FC<ChatViewProps> = ({
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          // Fixed: Use 'contents' and 'embeddings' as per type definition errors
+          // Fix: Use 'gemini-embedding-001', property 'content', and response 'embedding'
           const queryEmbeddingResult = await ai.models.embedContent({
             model: 'gemini-embedding-001',
-            contents: [{ parts: [{ text: userText }] }]
+            content: { parts: [{ text: userText }] }
           });
-          if (queryEmbeddingResult.embeddings?.values) {
-            const queryVector = queryEmbeddingResult.embeddings.values;
+          if (queryEmbeddingResult.embedding?.values) {
+            const queryVector = queryEmbeddingResult.embedding.values;
             const scoredMemories = memory.map(item => ({
               text: item.text,
               score: cosineSimilarity(queryVector, item.embedding)
@@ -222,15 +222,15 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       if (result.newFact) {
         try {
-          // Fixed: Use 'contents' and 'embeddings' as per type definition errors
+          // Fix: Use 'gemini-embedding-001', property 'content', and response 'embedding'
           const embeddingResult = await ai.models.embedContent({
             model: 'gemini-embedding-001',
-            contents: [{ parts: [{ text: result.newFact }] }]
+            content: { parts: [{ text: result.newFact }] }
           });
-          if (embeddingResult.embeddings?.values) {
+          if (embeddingResult.embedding?.values) {
             onAddMemory({
               text: result.newFact,
-              embedding: embeddingResult.embeddings.values,
+              embedding: embeddingResult.embedding.values,
               timestamp: Date.now()
             });
           }
