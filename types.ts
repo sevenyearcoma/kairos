@@ -39,6 +39,8 @@ export interface Task {
   daysOfWeek?: number[];
   dayOfMonth?: number;
   estimatedMinutes?: number; 
+  source?: 'local' | 'google';
+  externalId?: string;
 }
 
 export interface Personality {

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryItem } from '../types';
@@ -108,8 +107,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          // Fixed property access: changed 'embeddings' to 'embedding' as embedContent returns a single embedding object.
-          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: userText }] } });
+          // Fix: EmbedContentParameters property is 'content' (singular) and EmbedContentResponse property is 'embedding' (singular)
+          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: userText }] } });
           if (queryEmbeddingResult.embedding?.values) {
             const queryVector = queryEmbeddingResult.embedding.values;
             const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
@@ -192,8 +191,8 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       if (result.newFact) {
         try {
-          // Fixed property access: changed 'embeddings' to 'embedding' as embedContent returns a single embedding object.
-          const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: result.newFact }] } });
+          // Fix: EmbedContentParameters property is 'content' (singular) and EmbedContentResponse property is 'embedding' (singular)
+          const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: result.newFact }] } });
           if (embeddingResult.embedding?.values) {
             onAddMemory({ text: result.newFact, embedding: embeddingResult.embedding.values, timestamp: Date.now() });
           }

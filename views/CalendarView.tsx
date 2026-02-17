@@ -14,11 +14,13 @@ interface CalendarViewProps {
   onAddTask: (title: string, category: string, date: string) => void;
   onEditEvent: (id: string, updates: any) => void;
   onSyncGoogle: () => void;
+  onDisconnectGoogle: () => void;
   isGoogleConnected: boolean;
+  lastSyncTime?: string | null;
 }
 
 const CalendarView: React.FC<CalendarViewProps> = ({ 
-  events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, isGoogleConnected 
+  events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime 
 }) => {
   const t = useMemo(() => getT(language), [language]);
   const [viewDate, setViewDate] = useState(new Date()); 
@@ -54,7 +56,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const handleSync = () => {
     setIsSyncing(true);
     onSyncGoogle();
-    // Simulate end of sync visual
     setTimeout(() => {
       setIsSyncing(false);
     }, 1500);
@@ -160,24 +161,39 @@ const CalendarView: React.FC<CalendarViewProps> = ({
               </button>
             </div>
           </div>
+          {isGoogleConnected && lastSyncTime && (
+            <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 ml-1">
+              <span className="material-symbols-outlined text-[12px]">done_all</span>
+              {language === 'ru' ? 'Синхронизировано в' : 'Last synced at'} {lastSyncTime}
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={handleSync}
-            disabled={isSyncing}
-            className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95 ${
-              isGoogleConnected 
-                ? 'bg-primary/10 text-primary border border-primary/20' 
-                : 'bg-white border border-charcoal/5 text-charcoal hover:bg-charcoal/5'
-            }`}
-          >
-            {isSyncing ? (
-              <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-            ) : (
-              <span className="material-symbols-outlined text-[20px]">cloud_sync</span>
+          <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
+            <button 
+              onClick={handleSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                isGoogleConnected 
+                  ? 'bg-primary/10 text-primary' 
+                  : 'text-charcoal/40 hover:text-charcoal hover:bg-white'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-[18px] ${isSyncing ? 'animate-spin' : ''}`}>
+                {isGoogleConnected ? 'sync' : 'cloud_off'}
+              </span>
+              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC NOW') : t.calendar.linkGoogle}
+            </button>
+            {isGoogleConnected && (
+              <button 
+                onClick={onDisconnectGoogle}
+                title={language === 'ru' ? 'Отключить Google' : 'Disconnect Google'}
+                className="size-10 flex items-center justify-center text-charcoal/20 hover:text-red-500 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">logout</span>
+              </button>
             )}
-            {isGoogleConnected ? t.calendar.linked : t.calendar.linkGoogle}
-          </button>
+          </div>
           <button 
             onClick={() => setShowQuickAdd(true)}
             className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center hover:bg-primary transition-all shadow-xl active:scale-90"
@@ -264,7 +280,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                                 <span className="material-symbols-outlined text-[14px] text-charcoal/20">sync</span>
                               )}
                               {event.source === 'google' && (
-                                <span className="material-symbols-outlined text-[14px] text-primary">cloud</span>
+                                <div className="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
+                                  <span className="material-symbols-outlined text-[11px]">cloud</span>
+                                  <span className="text-[8px] font-black uppercase tracking-tighter">GOOGLE</span>
+                                </div>
                               )}
                             </div>
                             <h3 className="text-lg font-display font-bold text-charcoal leading-tight">{event.title}</h3>
@@ -281,6 +300,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     {filteredItems.tasks.map((task) => (
                       <div 
                         key={task.id} 
+                        // Fix: Change 'setSelectedTask' to 'setSelectedItem'
                         onClick={() => setSelectedItem(task)}
                         className="group flex items-center gap-5 p-6 bg-white border border-charcoal/5 rounded-[2.5rem] shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer"
                       >

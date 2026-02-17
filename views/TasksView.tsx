@@ -44,8 +44,6 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       } else if (t.failed) {
         failed.push(t);
       } else if (t.recurrence && t.recurrence !== 'none') {
-        // Routines are shown in their own section regardless of specific date match
-        // but they also appear in 'today' if they occur today
         routines.push(t);
         if (isItemOnDate(t, TODAY)) {
           today.push(t);
@@ -59,8 +57,6 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       }
     });
 
-    // Remove duplicates from today if they are in routines (we show them in both for clarity or just one?)
-    // Let's keep them separated: Routines vs One-offs
     const todayOneOffs = today.filter(t => !t.recurrence || t.recurrence === 'none');
 
     return { routines, todayOneOffs, tomorrow, later, completed, failed };
@@ -156,6 +152,11 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
            </h3>
            {task.recurrence && task.recurrence !== 'none' && (
              <span className="material-symbols-outlined text-[14px] text-primary/40">sync</span>
+           )}
+           {task.source === 'google' && (
+             <div className="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
+               <span className="material-symbols-outlined text-[11px]">task</span>
+             </div>
            )}
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -269,7 +270,6 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       )}
 
       <div className="space-y-10">
-        {/* RECURRING ROUTINES SECTION */}
         {groupedTasks.routines.length > 0 && (
           <section className="space-y-4">
             <div className="flex items-center gap-3">
