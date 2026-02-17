@@ -53,7 +53,9 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  isSynced?: boolean; // Persistently track if the draft in this message was added
   draftEvent?: Partial<Event>;
+  draftTask?: Partial<Task>;
   draftReschedule?: { 
     taskId: string; 
     newDate: string; 
