@@ -15,15 +15,23 @@ interface TasksViewProps {
   onAddTask: (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence']) => void;
   onRescheduleTask: (taskId: string, newDate: string) => void;
   onFailTask: (id: string) => void;
+  onSyncGoogle: () => void;
+  onDisconnectGoogle: () => void;
+  isGoogleConnected: boolean;
+  lastSyncTime?: string | null;
 }
 
-const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask }) => {
+const TasksView: React.FC<TasksViewProps> = ({ 
+  tasks, personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask,
+  onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime
+}) => {
   const t = useMemo(() => getT(language), [language]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState(t.tasks.categories[0]);
   const [showInput, setShowInput] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; visible: boolean } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const TODAY = new Date().toISOString().split('T')[0];
   const TOMORROW_DATE = new Date();
@@ -70,6 +78,14 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
       return () => clearTimeout(timer);
     }
   }, [feedback]);
+
+  const handleSync = () => {
+    setIsSyncing(true);
+    onSyncGoogle();
+    setTimeout(() => {
+      setIsSyncing(false);
+    }, 1500);
+  };
 
   const handleToggle = (id: string) => {
     const task = tasks.find(t => t.id === id);
@@ -218,20 +234,57 @@ const TasksView: React.FC<TasksViewProps> = ({ tasks, personality, language, onT
         </div>
       )}
 
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-charcoal">{t.tasks.title}</h1>
-          <p className="text-charcoal/40 mt-2 text-sm font-medium">
-            {t.tasks.activeFor} {new Date(TODAY).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })}
-          </p>
+          <div className="flex items-center gap-4">
+             <p className="text-charcoal/40 text-sm font-medium">
+                {t.tasks.activeFor} {new Date(TODAY).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })}
+             </p>
+             {isGoogleConnected && lastSyncTime && (
+               <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 border-l border-charcoal/5 pl-4">
+                 <span className="material-symbols-outlined text-[12px]">done_all</span>
+                 {language === 'ru' ? 'Обновлено в' : 'Synced at'} {lastSyncTime}
+               </p>
+             )}
+          </div>
         </div>
-        <button 
-          onClick={() => setShowInput(!showInput)}
-          className="flex items-center gap-3 px-6 py-3 bg-charcoal text-cream rounded-2xl hover:bg-primary transition-all shadow-lg shadow-charcoal/5 font-bold uppercase tracking-widest text-[11px]"
-        >
-          <span className="material-symbols-outlined text-[18px]">{showInput ? 'close' : 'add'}</span>
-          {showInput ? t.tasks.cancel : t.tasks.newTask}
-        </button>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
+            <button 
+              onClick={handleSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                isGoogleConnected 
+                  ? 'bg-primary/10 text-primary' 
+                  : 'text-charcoal/40 hover:text-charcoal hover:bg-white'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-[16px] ${isSyncing ? 'animate-spin' : ''}`}>
+                {isGoogleConnected ? 'sync' : 'cloud_off'}
+              </span>
+              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC TASKS') : (language === 'ru' ? 'СВЯЗАТЬ GOOGLE' : 'LINK GOOGLE')}
+            </button>
+            {isGoogleConnected && (
+              <button 
+                onClick={onDisconnectGoogle}
+                title={language === 'ru' ? 'Отключить Google' : 'Disconnect Google'}
+                className="size-10 flex items-center justify-center text-charcoal/20 hover:text-red-500 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">logout</span>
+              </button>
+            )}
+          </div>
+
+          <button 
+            onClick={() => setShowInput(!showInput)}
+            className="flex items-center gap-3 px-6 py-3 bg-charcoal text-cream rounded-2xl hover:bg-primary transition-all shadow-lg shadow-charcoal/5 font-bold uppercase tracking-widest text-[11px]"
+          >
+            <span className="material-symbols-outlined text-[18px]">{showInput ? 'close' : 'add'}</span>
+            {showInput ? t.tasks.cancel : t.tasks.newTask}
+          </button>
+        </div>
       </header>
 
       {showInput && (

@@ -115,7 +115,10 @@ const App: React.FC = () => {
       const response = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!response.ok) throw new Error('Failed to fetch tasks');
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('Unauthorized');
+        throw new Error('Failed to fetch tasks');
+      }
       const data = await response.json();
       if (data.items) {
         const googleTasks: Task[] = data.items.map((item: any) => ({
@@ -136,8 +139,12 @@ const App: React.FC = () => {
           return [...nonGoogle, ...googleTasks];
         });
       }
-    } catch (e) {
-      console.error("Error fetching Google tasks:", e);
+    } catch (error: any) {
+      console.error("Task Sync error:", error);
+      if (error.message === 'Unauthorized') {
+        setIsGoogleConnected(false);
+        localStorage.removeItem('kairos_google_token');
+      }
     }
   };
 
@@ -609,6 +616,10 @@ const App: React.FC = () => {
                   onRescheduleTask={handleRescheduleTask} 
                   onFailTask={(id) => handleUpdateTask(id, { failed: true })} 
                   onEditTask={handleUpdateTask} 
+                  onSyncGoogle={handleSyncGoogle}
+                  onDisconnectGoogle={handleDisconnectGoogle}
+                  isGoogleConnected={isGoogleConnected}
+                  lastSyncTime={lastSyncTime}
                 />
               } />
               <Route path="/focus" element={

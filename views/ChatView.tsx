@@ -107,10 +107,10 @@ const ChatView: React.FC<ChatViewProps> = ({
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          // Fix: EmbedContentParameters property is 'content' (singular) and EmbedContentResponse property is 'embedding' (singular)
-          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: userText }] } });
-          if (queryEmbeddingResult.embedding?.values) {
-            const queryVector = queryEmbeddingResult.embedding.values;
+          // Fix: EmbedContentParameters property is 'contents' and EmbedContentResponse property is 'embeddings'
+          const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: userText }] } });
+          if (queryEmbeddingResult.embeddings?.values) {
+            const queryVector = queryEmbeddingResult.embeddings.values;
             const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
             retrievedMemories = scoredMemories.filter(m => m.score > 0.45).slice(0, 5).map(m => m.text);
           }
@@ -191,10 +191,10 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       if (result.newFact) {
         try {
-          // Fix: EmbedContentParameters property is 'content' (singular) and EmbedContentResponse property is 'embedding' (singular)
-          const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', content: { parts: [{ text: result.newFact }] } });
-          if (embeddingResult.embedding?.values) {
-            onAddMemory({ text: result.newFact, embedding: embeddingResult.embedding.values, timestamp: Date.now() });
+          // Fix: EmbedContentParameters property is 'contents' and EmbedContentResponse property is 'embeddings'
+          const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: result.newFact }] } });
+          if (embeddingResult.embeddings?.values) {
+            onAddMemory({ text: result.newFact, embedding: embeddingResult.embeddings.values, timestamp: Date.now() });
           }
         } catch (e) { console.warn("Indexing fact failed", e); }
       }
