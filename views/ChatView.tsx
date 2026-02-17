@@ -108,10 +108,10 @@ const ChatView: React.FC<ChatViewProps> = ({
       let retrievedMemories: string[] = [];
       if (memory.length > 0) {
         try {
-          // Fixed embedContent parameters: changed 'content' to 'contents' and 'embedding' to 'embeddings' per SDK types
+          // Fixed property access: changed 'embeddings' to 'embedding' as embedContent returns a single embedding object.
           const queryEmbeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: userText }] } });
-          if (queryEmbeddingResult.embeddings?.values) {
-            const queryVector = queryEmbeddingResult.embeddings.values;
+          if (queryEmbeddingResult.embedding?.values) {
+            const queryVector = queryEmbeddingResult.embedding.values;
             const scoredMemories = memory.map(item => ({ text: item.text, score: cosineSimilarity(queryVector, item.embedding) })).sort((a, b) => b.score - a.score);
             retrievedMemories = scoredMemories.filter(m => m.score > 0.45).slice(0, 5).map(m => m.text);
           }
@@ -192,10 +192,10 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       if (result.newFact) {
         try {
-          // Fixed embedContent parameters: changed 'content' to 'contents' and 'embedding' to 'embeddings' per SDK types
+          // Fixed property access: changed 'embeddings' to 'embedding' as embedContent returns a single embedding object.
           const embeddingResult = await ai.models.embedContent({ model: 'gemini-embedding-001', contents: { parts: [{ text: result.newFact }] } });
-          if (embeddingResult.embeddings?.values) {
-            onAddMemory({ text: result.newFact, embedding: embeddingResult.embeddings.values, timestamp: Date.now() });
+          if (embeddingResult.embedding?.values) {
+            onAddMemory({ text: result.newFact, embedding: embeddingResult.embedding.values, timestamp: Date.now() });
           }
         } catch (e) { console.warn("Indexing fact failed", e); }
       }

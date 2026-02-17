@@ -40,7 +40,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
       setFormData({ 
         ...item, 
         daysOfWeek: item.daysOfWeek || [],
-        dayOfMonth: item.dayOfMonth || new Date(item.date).getDate()
+        dayOfMonth: item.dayOfMonth || (item.date ? new Date(item.date).getDate() : 1)
       });
       setIsEditing(false);
     }
@@ -49,6 +49,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   if (!item) return null;
 
   const isEvent = 'startTime' in item;
+  const isGoogleSynced = isEvent && (item as Event).source === 'google';
 
   const handleSave = () => {
     if (onEdit) {
@@ -90,30 +91,40 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-charcoal/40 backdrop-blur-md" onClick={onClose}></div>
       <div className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-500">
-        <div className="px-8 pt-8 pb-6 flex items-start justify-between border-b border-charcoal/5">
-          <div className="flex-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-2 block">
-              {isEvent ? t.modal.calendarEvent : t.modal.agendaTask}
-            </span>
-            {isEditing ? (
-              <input 
-                className="text-2xl font-display font-extrabold text-charcoal leading-tight w-full bg-beige-soft border-none rounded-xl focus:ring-2 focus:ring-primary"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              />
-            ) : (
-              <h2 className="text-2xl font-display font-extrabold text-charcoal leading-tight">{item.title}</h2>
-            )}
-          </div>
-          <div className="flex gap-2">
-            {!isEditing && onEdit && (
-              <button onClick={() => setIsEditing(true)} className="p-2 bg-charcoal/5 rounded-full hover:bg-charcoal/10 transition-colors">
-                <span className="material-symbols-outlined text-charcoal/40">edit</span>
+        <div className="px-8 pt-8 pb-6 border-b border-charcoal/5">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                  {isEvent ? t.modal.calendarEvent : t.modal.agendaTask}
+                </span>
+                {isGoogleSynced && (
+                  <span className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest">
+                    <span className="material-symbols-outlined text-[10px]">cloud_done</span>
+                    {language === 'ru' ? 'СИНХРОНИЗИРОВАНО' : 'SYNCED'}
+                  </span>
+                )}
+              </div>
+              {isEditing ? (
+                <input 
+                  className="text-2xl font-display font-extrabold text-charcoal leading-tight w-full bg-beige-soft border-none rounded-xl focus:ring-2 focus:ring-primary"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                />
+              ) : (
+                <h2 className="text-2xl font-display font-extrabold text-charcoal leading-tight">{item.title}</h2>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {!isEditing && onEdit && (
+                <button onClick={() => setIsEditing(true)} className="p-2 bg-charcoal/5 rounded-full hover:bg-charcoal/10 transition-colors">
+                  <span className="material-symbols-outlined text-charcoal/40">edit</span>
+                </button>
+              )}
+              <button onClick={onClose} className="p-2 bg-charcoal/5 rounded-full hover:bg-charcoal/10 transition-colors">
+                <span className="material-symbols-outlined text-charcoal/40">close</span>
               </button>
-            )}
-            <button onClick={onClose} className="p-2 bg-charcoal/5 rounded-full hover:bg-charcoal/10 transition-colors">
-              <span className="material-symbols-outlined text-charcoal/40">close</span>
-            </button>
+            </div>
           </div>
         </div>
 
@@ -150,7 +161,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 )
               ) : (
                 <p className="text-sm font-bold text-charcoal">
-                  {isEvent ? `${formData.startTime} — ${formData.endTime}` : formData.category}
+                  {isEvent ? `${formData.startTime} — ${formData.endTime}` : (item as Task).category}
                 </p>
               )}
             </div>

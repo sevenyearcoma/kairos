@@ -56,7 +56,6 @@ const App: React.FC = () => {
     return !!localStorage.getItem('kairos_google_token');
   });
 
-  // Fallback to first available chat if activeChatId is invalid or not found
   const activeChat = useMemo(() => {
     if (!chats.length) return null;
     return chats.find(c => c.id === activeChatId) || chats[0];
@@ -91,6 +90,17 @@ const App: React.FC = () => {
     setMemory(prev => [item, ...prev].slice(0, 100));
   }, []);
 
+  const convertTimeToGoogle = (dateStr: string, timeStr: string) => {
+    if (!timeStr || timeStr === 'All Day') return { date: dateStr };
+    const [time, modifier] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':');
+    let h = parseInt(hours, 10);
+    if (modifier === 'PM' && h < 12) h += 12;
+    if (modifier === 'AM' && h === 12) h = 0;
+    // We assume the user's local time for simplicity or UTC
+    return { dateTime: `${dateStr}T${h.toString().padStart(2, '0')}:${minutes}:00`, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  };
+
   const fetchGoogleEvents = async (token: string) => {
     try {
       const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' + new Date().toISOString(), { headers: { 'Authorization': `Bearer ${token}` } });
@@ -124,19 +134,9 @@ const App: React.FC = () => {
 
   const createGoogleEvent = async (event: Event) => {
     const token = localStorage.getItem('kairos_google_token');
-    if (!token) return;
+    if (!token) return null;
 
     try {
-      const convertTime = (dateStr: string, timeStr: string) => {
-        if (!timeStr || timeStr === 'All Day') return { date: dateStr };
-        const [time, modifier] = timeStr.split(' ');
-        let [hours, minutes] = time.split(':');
-        let h = parseInt(hours, 10);
-        if (modifier === 'PM' && h < 12) h += 12;
-        if (modifier === 'AM' && h === 12) h = 0;
-        return { dateTime: `${dateStr}T${h.toString().padStart(2, '0')}:${minutes}:00Z`, timeZone: 'UTC' };
-      };
-
       let recurrenceRule: string[] | undefined;
       if (event.recurrence && event.recurrence !== 'none') {
         let rule = 'RRULE:FREQ=';
@@ -155,8 +155,8 @@ const App: React.FC = () => {
         summary: event.title,
         location: event.location,
         description: event.description,
-        start: convertTime(event.date, event.startTime),
-        end: convertTime(event.date, event.endTime),
+        start: convertTimeToGoogle(event.date, event.startTime),
+        end: convertTimeToGoogle(event.date, event.endTime),
         recurrence: recurrenceRule
       };
 
@@ -177,6 +177,53 @@ const App: React.FC = () => {
       console.error("Error creating Google event:", error);
     }
     return null;
+  };
+
+  const updateGoogleEvent = async (event: Event) => {
+    const token = localStorage.getItem('kairos_google_token');
+    if (!token || !event.externalId) return false;
+
+    try {
+      const googleEventResource = {
+        summary: event.title,
+        location: event.location,
+        description: event.description,
+        start: convertTimeToGoogle(event.date, event.startTime),
+        end: convertTimeToGoogle(event.date, event.endTime),
+      };
+
+      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${event.externalId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(googleEventResource)
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error("Error updating Google event:", error);
+      return false;
+    }
+  };
+
+  const deleteGoogleEvent = async (externalId: string) => {
+    const token = localStorage.getItem('kairos_google_token');
+    if (!token || !externalId) return false;
+
+    try {
+      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      return response.ok;
+    } catch (error) {
+      console.error("Error deleting Google event:", error);
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -224,13 +271,36 @@ const App: React.FC = () => {
       source: 'local',
       ...event
     };
-    setEvents(prev => [...prev, newEvent]);
+    
     if (isGoogleConnected) {
       const externalId = await createGoogleEvent(newEvent);
       if (externalId) {
-        setEvents(prev => prev.map(e => e.id === newId ? { ...e, externalId, source: 'google' } : e));
+        newEvent.externalId = externalId;
+        newEvent.source = 'google';
+        newEvent.id = `google-${externalId}`;
       }
     }
+    setEvents(prev => [...prev, newEvent]);
+  };
+
+  const handleUpdateEvent = async (id: string, updates: Partial<Event>) => {
+    const existing = events.find(e => e.id === id);
+    if (!existing) return;
+
+    const updatedEvent = { ...existing, ...updates };
+    setEvents(prev => prev.map(e => e.id === id ? updatedEvent : e));
+
+    if (updatedEvent.source === 'google' && isGoogleConnected) {
+      await updateGoogleEvent(updatedEvent);
+    }
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    const existing = events.find(e => e.id === id);
+    if (existing?.source === 'google' && existing.externalId && isGoogleConnected) {
+      await deleteGoogleEvent(existing.externalId);
+    }
+    setEvents(prev => prev.filter(e => e.id !== id));
   };
 
   const handleAddTask = (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], estimatedMinutes?: number, daysOfWeek?: number[]) => {
@@ -347,10 +417,10 @@ const App: React.FC = () => {
                   events={events} 
                   tasks={tasks} 
                   language={language} 
-                  onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} 
+                  onDeleteEvent={handleDeleteEvent} 
                   onAddEvent={handleAddEvent} 
                   onAddTask={(title, cat, date) => handleAddTask(title, cat, date)} 
-                  onEditEvent={(id, updates) => setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e))} 
+                  onEditEvent={handleUpdateEvent} 
                   onSyncGoogle={handleSyncGoogle} 
                   isGoogleConnected={isGoogleConnected} 
                 />
