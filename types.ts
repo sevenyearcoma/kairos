@@ -30,17 +30,17 @@ export interface Event {
   dayOfMonth?: number;
 }
 
-export type TaskStatus = 'planning' | 'todo' | 'in_progress' | 'done';
+export type TaskPriority = 'urgent' | 'high' | 'normal' | 'low';
 
 export interface Task {
   id: string;
   title: string;
-  date: string; // YYYY-MM-DD
-  time: string;
+  date?: string; // Optional for drafts
+  time?: string;
   category: string;
   completed: boolean;
   failed?: boolean;
-  priority?: 'low' | 'medium' | 'high';
+  priority: TaskPriority;
   rescheduleCount?: number;
   description?: string;
   recurrence?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_days';
@@ -49,7 +49,6 @@ export interface Task {
   estimatedMinutes?: number; 
   source?: 'local' | 'google';
   externalId?: string;
-  status?: TaskStatus;
 }
 
 export interface Personality {

@@ -6,7 +6,7 @@ import CalendarView from './views/CalendarView';
 import TasksView from './views/TasksView';
 import FocusView from './views/FocusView';
 import BottomNav from './components/BottomNav';
-import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences } from './types';
+import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority } from './types';
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
 
@@ -117,18 +117,17 @@ const App: React.FC = () => {
       if (tasksResponse.status === 401) throw new Error('Unauthorized');
       const tasksData = await tasksResponse.json();
       const googleTasks: Task[] = (tasksData.items || []).filter((item: any) => item.title).map((item: any) => {
-        const date = item.due ? item.due.split('T')[0] : TODAY;
+        const date = item.due ? item.due.split('T')[0] : '';
         return { 
           id: `google-${item.id}`, 
           externalId: item.id, 
           title: item.title, 
           category: 'Work', 
           date, 
-          time: '09:00', 
           completed: item.status === 'completed', 
           description: item.notes, 
           source: 'google',
-          status: item.status === 'completed' ? 'done' : (date === TODAY ? 'todo' : 'planning')
+          priority: 'normal'
         };
       });
 
@@ -232,19 +231,17 @@ const App: React.FC = () => {
     setEvents(prev => [...prev, newEvent]);
   };
 
-  const handleAddTask = async (title: string, category: string, date: string, description?: string) => {
-    const isToday = date === TODAY;
+  const handleAddTask = async (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) => {
     const newTask: Task = { 
       id: Date.now().toString(), 
       title, 
       category, 
       date, 
-      time: '09:00', 
       completed: false, 
       description, 
-      recurrence: 'none', 
+      recurrence: recurrence || 'none', 
       source: 'local',
-      status: isToday ? 'todo' : 'planning' 
+      priority: priority || 'normal'
     };
     setTasks(prev => [...prev, newTask]);
   };
@@ -340,9 +337,10 @@ const App: React.FC = () => {
                   events={events} 
                   personality={personality} 
                   language={language} 
-                  onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed, status: !t.completed ? 'done' : 'todo'} : t))} 
+                  onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} 
                   onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} 
-                  onAddTask={handleAddTask} 
+                  onAddTask={handleAddTask}
+                  onAddEvent={handleAddEvent} 
                   onEditTask={handleEditTask}
                   onRescheduleTask={() => {}} 
                   onFailTask={() => {}} 

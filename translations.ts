@@ -6,7 +6,7 @@ export const translations = {
     nav: {
       secretary: 'Secretary',
       calendar: 'Calendar',
-      tasks: 'Tasks',
+      tasks: 'Drafts',
       focus: 'Focus',
       assistant: 'Personal Assistant'
     },
@@ -39,18 +39,18 @@ export const translations = {
       taskDesc: 'Task description?'
     },
     tasks: {
-      title: 'Objectives',
-      activeFor: 'Active for',
-      newTask: 'New Task',
+      title: 'Idea Board',
+      activeFor: 'Unscheduled Drafts',
+      newTask: 'New Draft',
       cancel: 'Cancel',
-      accept: 'Accept Task',
+      accept: 'Add to Board',
       today: 'Today',
       tomorrow: 'Tomorrow',
       abandoned: 'Abandoned Plans',
       upcoming: 'Upcoming',
       completed: 'Completed',
-      noTasks: 'No tasks assigned',
-      placeholder: 'Target objective?',
+      noTasks: 'No drafts in this category',
+      placeholder: 'What needs to be done?',
       postpone: 'Move to Tomorrow',
       abandon: 'Abandoned',
       categories: ['Work', 'Personal', 'Meeting', 'Finance'],
@@ -62,6 +62,17 @@ export const translations = {
       colToday: 'Today',
       colTomorrow: 'Tomorrow',
       colDone: 'Done',
+      priorities: {
+        urgent: 'Do Now',
+        high: 'High Priority',
+        normal: 'Medium Priority',
+        low: 'Low Priority / Later'
+      },
+      promote: {
+        button: 'Schedule',
+        modalTitle: 'Schedule Event',
+        confirm: 'Add to Calendar'
+      },
       kanban: {
         planning: 'Planning',
         todo: 'To Do',
@@ -112,7 +123,7 @@ export const translations = {
     nav: {
       secretary: 'Секретарь',
       calendar: 'Календарь',
-      tasks: 'Задачи',
+      tasks: 'Черновики',
       focus: 'Фокус',
       assistant: 'Личный помощник'
     },
@@ -145,18 +156,18 @@ export const translations = {
       taskDesc: 'Описание?'
     },
     tasks: {
-      title: 'Цели',
-      activeFor: 'На дату',
-      newTask: 'Новая задача',
+      title: 'Идеи',
+      activeFor: 'Нераспределенное',
+      newTask: 'Новая идея',
       cancel: 'Отмена',
-      accept: 'Принять',
+      accept: 'Добавить',
       today: 'Сегодня',
       tomorrow: 'Завтра',
       abandoned: 'Заброшено',
       upcoming: 'Предстоящие',
       completed: 'Завершено',
-      noTasks: 'Задач нет',
-      placeholder: 'Ваша цель?',
+      noTasks: 'Пусто',
+      placeholder: 'Что нужно сделать?',
       postpone: 'На завтра',
       abandon: 'Заброшено',
       categories: ['Работа', 'Личное', 'Встреча', 'Финансы'],
@@ -168,6 +179,17 @@ export const translations = {
       colToday: 'Сегодня',
       colTomorrow: 'Завтра',
       colDone: 'Готово',
+      priorities: {
+        urgent: 'Срочно',
+        high: 'Важно',
+        normal: 'Нормально',
+        low: 'Отложено'
+      },
+      promote: {
+        button: 'В календарь',
+        modalTitle: 'Назначить время',
+        confirm: 'Создать событие'
+      },
       kanban: {
         planning: 'План',
         todo: 'Сделать',

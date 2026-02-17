@@ -1,8 +1,7 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Event, Personality, Language, TaskStatus } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Task, Event, Personality, Language, TaskPriority } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
-import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 
 interface TasksViewProps {
@@ -13,7 +12,8 @@ interface TasksViewProps {
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
   onEditTask: (id: string, updates: Partial<Task>) => void;
-  onAddTask: (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence']) => void;
+  onAddTask: (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) => void;
+  onAddEvent?: (event: Partial<Event>) => void; // Added for promotion
   onRescheduleTask: (taskId: string, newDate: string) => void;
   onFailTask: (id: string) => void;
   onSyncGoogle: () => void;
@@ -24,118 +24,85 @@ interface TasksViewProps {
 }
 
 const TasksView: React.FC<TasksViewProps> = ({ 
-  tasks, events = [], personality, language, onToggleTask, onDeleteTask, onEditTask, onAddTask, onRescheduleTask, onFailTask,
+  tasks, language, onDeleteTask, onEditTask, onAddTask, onAddEvent,
   onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false
 }) => {
   const t = useMemo(() => getT(language), [language]);
+  
+  // State for new task
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState(t.tasks.categories[0]);
   const [showInput, setShowInput] = useState(false);
-  const [feedback, setFeedback] = useState<{ message: string; visible: boolean } | null>(null);
-  const [selectedItem, setSelectedItem] = useState<Task | Event | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban'); // Default to Kanban per user request implies focus on it
+  
+  // State for Drag & Drop
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  
+  // State for Mobile Tabs
+  const [activeMobileTab, setActiveMobileTab] = useState<TaskPriority>('urgent');
 
-  const TODAY = new Date().toISOString().split('T')[0];
-  const TOMORROW_DATE = new Date();
-  TOMORROW_DATE.setDate(TOMORROW_DATE.getDate() + 1);
-  const TOMORROW = TOMORROW_DATE.toISOString().split('T')[0];
+  // State for Promotion (Scheduling)
+  const [promotingTask, setPromotingTask] = useState<Task | null>(null);
+  const [promoteDate, setPromoteDate] = useState(new Date().toISOString().split('T')[0]);
+  const [promoteTime, setPromoteTime] = useState('10:00');
+  const [promoteDuration, setPromoteDuration] = useState('01:00');
 
-  // Helper to normalize status for old data
-  const getTaskStatus = (task: Task): TaskStatus => {
-    if (task.status) return task.status;
-    if (task.completed) return 'done';
-    if (task.failed) return 'planning'; // Failed tasks go back to backlog/planning
-    if (isItemOnDate(task, TODAY)) return 'todo';
-    return 'planning';
+  // State for Details
+  const [selectedItem, setSelectedItem] = useState<Task | Event | null>(null);
+
+  const priorities: TaskPriority[] = ['urgent', 'high', 'normal', 'low'];
+  const priorityColors = {
+    urgent: 'bg-red-50 text-red-600 border-red-100',
+    high: 'bg-orange-50 text-orange-600 border-orange-100',
+    normal: 'bg-blue-50 text-blue-600 border-blue-100',
+    low: 'bg-charcoal/5 text-charcoal/60 border-charcoal/5'
   };
 
-  const groupedItems = useMemo(() => {
-    // For List View
-    const routines: Task[] = [];
-    const todayTasks: Task[] = [];
-    const tomorrowTasks: Task[] = [];
-    const laterTasks: Task[] = [];
-    const completedTasks: Task[] = [];
-    const failedTasks: Task[] = [];
-    
-    // For Kanban View
-    const kanban = {
-      planning: [] as Task[],
-      todo: [] as Task[],
-      in_progress: [] as Task[],
-      done: [] as Task[]
-    };
-
-    tasks.forEach(t => {
-      // List View Logic
-      if (t.completed) completedTasks.push(t);
-      else if (t.failed) failedTasks.push(t);
-      else if (t.recurrence && t.recurrence !== 'none') {
-        routines.push(t);
-        if (isItemOnDate(t, TODAY)) todayTasks.push(t);
-      } else if (isItemOnDate(t, TODAY)) todayTasks.push(t);
-      else if (isItemOnDate(t, TOMORROW)) tomorrowTasks.push(t);
-      else laterTasks.push(t);
-
-      // Kanban View Logic
-      const status = getTaskStatus(t);
-      kanban[status].push(t);
+  const groupedTasks = useMemo(() => {
+    const groups: Record<TaskPriority, Task[]> = { urgent: [], high: [], normal: [], low: [] };
+    tasks.forEach(task => {
+      // If priority is undefined in old data, default to normal
+      const p = task.priority || 'normal';
+      if (groups[p]) groups[p].push(task);
+      else groups['normal'].push(task);
     });
-
-    const todayOneOffs = todayTasks.filter(t => !t.recurrence || t.recurrence === 'none');
-
-    return { 
-      // List
-      routines, todayOneOffs, tomorrowTasks, laterTasks, completedTasks, failedTasks,
-      // Kanban
-      kanban
-    };
-  }, [tasks, TODAY, TOMORROW]);
-
-  useEffect(() => {
-    if (feedback?.visible) {
-      const timer = setTimeout(() => {
-        setFeedback(null);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [feedback]);
-
-  const handleToggle = (id: string) => {
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-    
-    // Simple toggle for List View
-    onToggleTask(id);
-
-    if (!task.completed) {
-      let message = t.tasks.feedback.success;
-      if (personality.strictness > 60) message = t.tasks.feedback.strict;
-      else if (personality.trust > 80) {
-        const warm = t.tasks.feedback.warm;
-        message = warm[Math.floor(Math.random() * warm.length)];
-      }
-      setFeedback({ message, visible: true });
-    }
-  };
-
-  const handleFail = (id: string) => {
-    onFailTask(id);
-    setFeedback({ message: t.tasks.feedback.fail, visible: true });
-  };
+    return groups;
+  }, [tasks]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTaskTitle.trim()) {
-      onAddTask(newTaskTitle, newTaskCategory, TODAY);
+      // Default to 'normal' priority for quick add
+      onAddTask(newTaskTitle, newTaskCategory, '', undefined, 'none', 'normal');
       setNewTaskTitle('');
       setShowInput(false);
     }
   };
 
-  const handlePostpone = (taskId: string) => {
-    onRescheduleTask(taskId, TOMORROW);
+  const handlePromoteSubmit = () => {
+    if (!promotingTask || !onAddEvent) return;
+
+    // Calculate end time
+    const [h, m] = promoteTime.split(':').map(Number);
+    const [dh, dm] = promoteDuration.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(h + dh);
+    endDate.setMinutes(m + dm);
+    const endTime = endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    onAddEvent({
+      title: promotingTask.title,
+      description: promotingTask.description,
+      type: promotingTask.category.toLowerCase() as any || 'work',
+      date: promoteDate,
+      startTime: promoteTime,
+      endTime: endTime,
+      recurrence: promotingTask.recurrence || 'none',
+      daysOfWeek: promotingTask.daysOfWeek,
+      source: 'local'
+    });
+
+    onDeleteTask(promotingTask.id);
+    setPromotingTask(null);
   };
 
   // --- DnD Handlers ---
@@ -143,112 +110,86 @@ const TasksView: React.FC<TasksViewProps> = ({
     setDraggedTaskId(taskId);
     e.dataTransfer.setData('text/plain', taskId);
     e.dataTransfer.effectAllowed = 'move';
-    // Transparent ghost image if desired, standard behavior is usually fine
   };
 
   const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Necessary to allow dropping
+    e.preventDefault();
   };
 
-  const onDrop = (e: React.DragEvent, targetStatus: TaskStatus) => {
+  const onDrop = (e: React.DragEvent, targetPriority: TaskPriority) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain');
     if (!taskId) return;
-
     setDraggedTaskId(null);
 
-    // Find the task
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task || task.priority === targetPriority) return;
 
-    if (getTaskStatus(task) === targetStatus) return;
-
-    // Logic for updating task based on column
-    const updates: Partial<Task> = { status: targetStatus };
-
-    if (targetStatus === 'done') {
-      updates.completed = true;
-      let message = t.tasks.feedback.success;
-      setFeedback({ message, visible: true });
-    } else {
-      updates.completed = false;
-      // If moving to ToDo or InProgress, imply it's for today if it wasn't
-      if ((targetStatus === 'todo' || targetStatus === 'in_progress') && !isItemOnDate(task, TODAY)) {
-        updates.date = TODAY;
-      }
-    }
-    
-    onEditTask(taskId, updates);
+    onEditTask(taskId, { priority: targetPriority });
   };
 
-  const columns: { id: TaskStatus; label: string; colorClass: string; items: Task[] }[] = [
-    { id: 'planning', label: t.tasks.kanban.planning, colorClass: 'bg-charcoal/5', items: groupedItems.kanban.planning },
-    { id: 'todo', label: t.tasks.kanban.todo, colorClass: 'bg-primary/10', items: groupedItems.kanban.todo },
-    { id: 'in_progress', label: t.tasks.kanban.inProgress, colorClass: 'bg-primary/20', items: groupedItems.kanban.in_progress },
-    { id: 'done', label: t.tasks.kanban.done, colorClass: 'bg-emerald-muted/20', items: groupedItems.kanban.done },
-  ];
-
-  const renderTaskCard = (task: Task, isKanban = false) => (
-    <div 
-      key={task.id}
-      draggable={isKanban}
-      onDragStart={(e) => isKanban && onDragStart(e, task.id)}
-      className={`group flex items-center gap-4 p-5 rounded-[1.5rem] transition-all border cursor-pointer select-none active:scale-95 ${
-        task.id === draggedTaskId ? 'opacity-50 scale-95 shadow-none border-dashed' : 
-        task.completed 
-          ? 'bg-white/50 opacity-60 border-charcoal/5' 
-          : task.failed 
-          ? 'bg-red-50/50 border-red-100 opacity-80'
-          : 'bg-white hover:shadow-xl hover:shadow-charcoal/5 border-charcoal/5'
-      }`}
-      onClick={() => setSelectedItem(task)}
-    >
+  const renderColumn = (priority: TaskPriority) => {
+    const items = groupedTasks[priority];
+    return (
       <div 
-        onClick={(e) => { e.stopPropagation(); if (!task.failed) handleToggle(task.id); }}
-        className={`size-6 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 cursor-pointer ${
-          task.completed ? 'border-primary bg-primary' : 
-          task.failed ? 'border-red-200 bg-red-100' : 
-          'border-charcoal/10 group-hover:border-primary'
-        }`}
+        key={priority}
+        onDragOver={onDragOver}
+        onDrop={(e) => onDrop(e, priority)}
+        className="flex flex-col h-full bg-white/40 border border-charcoal/5 rounded-[2rem] overflow-hidden"
       >
-        {task.completed && <span className="material-symbols-outlined text-white text-[16px] font-bold">check</span>}
-        {task.failed && <span className="material-symbols-outlined text-red-500 text-[16px] font-bold">close</span>}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-           <h3 className={`text-sm font-bold truncate text-charcoal transition-all ${task.completed ? 'line-through text-charcoal/30' : task.failed ? 'text-red-900/40' : ''}`}>
-             {task.title}
-           </h3>
-           {task.recurrence && task.recurrence !== 'none' && (
-             <span className="material-symbols-outlined text-[14px] text-primary/40">sync</span>
-           )}
+        <div className={`p-4 border-b border-charcoal/5 flex justify-between items-center ${priority === activeMobileTab ? 'bg-white' : ''}`}>
+          <div className="flex items-center gap-2">
+            <div className={`size-2 rounded-full ${priority === 'urgent' ? 'bg-red-400' : priority === 'high' ? 'bg-orange-400' : priority === 'normal' ? 'bg-primary' : 'bg-charcoal/20'}`}></div>
+            <h3 className="text-xs font-black uppercase tracking-widest text-charcoal/60">{t.tasks.priorities[priority]}</h3>
+          </div>
+          <span className="text-[10px] font-bold text-charcoal/20 bg-white px-2 py-1 rounded-full border border-charcoal/5">{items.length}</span>
         </div>
-        <div className="flex items-center gap-3 mt-1">
-          <span className={`text-[10px] font-bold uppercase tracking-tighter ${task.completed ? 'text-charcoal/20' : task.failed ? 'text-red-300' : 'text-primary/80'}`}>
-            {task.category}
-          </span>
-          {task.rescheduleCount && task.rescheduleCount > 0 && (
-            <span className="text-[9px] bg-red-50 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">
-              Postponed x{task.rescheduleCount}
-            </span>
+        
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-hide">
+          {items.map(task => (
+            <div 
+              key={task.id}
+              draggable
+              onDragStart={(e) => onDragStart(e, task.id)}
+              className={`group relative p-5 bg-white rounded-[1.5rem] border border-charcoal/5 shadow-sm hover:shadow-lg transition-all cursor-grab active:cursor-grabbing ${task.id === draggedTaskId ? 'opacity-40 scale-95' : ''}`}
+              onClick={() => setSelectedItem(task)}
+            >
+               <div className="flex justify-between items-start mb-2">
+                 <span className="text-[9px] font-bold uppercase tracking-wider text-charcoal/30 bg-beige-soft px-2 py-1 rounded-lg">{task.category}</span>
+                 {task.recurrence && task.recurrence !== 'none' && <span className="material-symbols-outlined text-[14px] text-charcoal/20">sync</span>}
+               </div>
+               <h4 className="text-sm font-bold text-charcoal mb-4 leading-snug">{task.title}</h4>
+               
+               <div className="flex gap-2 mt-auto">
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); setPromotingTask(task); }}
+                    className="flex-1 py-2 bg-charcoal text-cream rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-primary hover:text-charcoal transition-colors shadow-sm"
+                 >
+                   <span className="material-symbols-outlined text-[14px]">event_available</span>
+                   {t.tasks.promote.button}
+                 </button>
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+                    className="size-8 flex items-center justify-center rounded-xl bg-charcoal/5 text-charcoal/20 hover:text-red-500 hover:bg-red-50 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[16px]">delete</span>
+                 </button>
+               </div>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <div className="h-32 flex flex-col items-center justify-center text-charcoal/10 border-2 border-dashed border-charcoal/5 rounded-2xl mx-1">
+              <span className="material-symbols-outlined text-3xl mb-1">inbox</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">{t.tasks.noTasks}</span>
+            </div>
           )}
         </div>
       </div>
-      {!isKanban && (
-        <div className="flex items-center gap-1">
-            <button 
-              onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
-              className="opacity-0 group-hover:opacity-30 hover:!opacity-100 transition-all p-2 text-charcoal/40 hover:text-red-500"
-            >
-              <span className="material-symbols-outlined text-lg">delete</span>
-            </button>
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="space-y-8 pb-32 md:pb-0 px-4 md:px-0 relative h-full flex flex-col">
+    <div className="space-y-6 pb-24 md:pb-0 px-4 md:px-0 relative h-full flex flex-col">
       <ItemDetailModal 
         item={selectedItem} 
         onClose={() => setSelectedItem(null)} 
@@ -256,22 +197,45 @@ const TasksView: React.FC<TasksViewProps> = ({
         language={language}
       />
 
-      {feedback?.visible && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] bg-charcoal text-cream px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="size-6 bg-primary rounded-full flex items-center justify-center text-charcoal">
-            <span className="material-symbols-outlined text-[16px] font-black">auto_awesome</span>
+      {/* Promotion Modal */}
+      {promotingTask && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-charcoal/30 backdrop-blur-sm" onClick={() => setPromotingTask(null)}></div>
+          <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+             <h3 className="text-lg font-display font-black text-charcoal mb-1">{t.tasks.promote.modalTitle}</h3>
+             <p className="text-xs text-charcoal/40 font-medium mb-6">Assign a time to "{promotingTask.title}"</p>
+             
+             <div className="space-y-4 mb-8">
+               <div>
+                 <label className="text-[9px] font-black uppercase tracking-widest text-charcoal/30 block mb-1">Date</label>
+                 <input type="date" value={promoteDate} onChange={e => setPromoteDate(e.target.value)} className="w-full bg-beige-soft border-none rounded-xl text-sm font-bold p-3" />
+               </div>
+               <div className="flex gap-4">
+                 <div className="flex-1">
+                   <label className="text-[9px] font-black uppercase tracking-widest text-charcoal/30 block mb-1">Start Time</label>
+                   <input type="time" value={promoteTime} onChange={e => setPromoteTime(e.target.value)} className="w-full bg-beige-soft border-none rounded-xl text-sm font-bold p-3" />
+                 </div>
+                 <div className="flex-1">
+                   <label className="text-[9px] font-black uppercase tracking-widest text-charcoal/30 block mb-1">Duration</label>
+                   <input type="time" value={promoteDuration} onChange={e => setPromoteDuration(e.target.value)} className="w-full bg-beige-soft border-none rounded-xl text-sm font-bold p-3" />
+                 </div>
+               </div>
+             </div>
+
+             <div className="flex gap-3">
+               <button onClick={() => setPromotingTask(null)} className="flex-1 py-3 border border-charcoal/10 rounded-xl text-[10px] font-black uppercase tracking-widest">Cancel</button>
+               <button onClick={handlePromoteSubmit} className="flex-1 py-3 bg-primary text-charcoal rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">{t.tasks.promote.confirm}</button>
+             </div>
           </div>
-          <span className="text-[11px] font-black uppercase tracking-widest">{feedback.message}</span>
         </div>
       )}
 
+      {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-charcoal">{t.tasks.title}</h1>
           <div className="flex items-center gap-4">
-             <p className="text-charcoal/40 text-sm font-medium">
-                {t.tasks.activeFor} {new Date(TODAY).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })}
-             </p>
+             <p className="text-charcoal/40 text-sm font-medium">{t.tasks.activeFor}</p>
              {isGoogleConnected && lastSyncTime && (
                <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 border-l border-charcoal/5 pl-4">
                  <span className={`material-symbols-outlined text-[12px] ${isSyncing ? 'animate-spin' : ''}`}>{isSyncing ? 'sync' : 'done_all'}</span>
@@ -282,23 +246,6 @@ const TasksView: React.FC<TasksViewProps> = ({
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
-            <button 
-              onClick={() => setViewMode('list')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'list' ? 'bg-white text-charcoal shadow-md' : 'text-charcoal/40 hover:text-charcoal'}`}
-            >
-              <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span>
-              <span className="hidden sm:inline">{t.tasks.viewList}</span>
-            </button>
-            <button 
-              onClick={() => setViewMode('kanban')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'kanban' ? 'bg-white text-charcoal shadow-md' : 'text-charcoal/40 hover:text-charcoal'}`}
-            >
-              <span className="material-symbols-outlined text-[18px]">view_kanban</span>
-              <span className="hidden sm:inline">{t.tasks.viewKanban}</span>
-            </button>
-          </div>
-
           <div className="flex items-center bg-beige-soft border border-charcoal/5 rounded-2xl p-1 shadow-sm">
             <button 
               onClick={onSyncGoogle}
@@ -314,15 +261,6 @@ const TasksView: React.FC<TasksViewProps> = ({
               </span>
               {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC') : (language === 'ru' ? 'GOOGLE' : 'LINK')}
             </button>
-            {isGoogleConnected && (
-              <button 
-                onClick={onDisconnectGoogle}
-                title={language === 'ru' ? 'Отключить Google' : 'Disconnect Google'}
-                className="size-10 flex items-center justify-center text-charcoal/20 hover:text-red-500 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[18px]">logout</span>
-              </button>
-            )}
           </div>
 
           <button 
@@ -370,116 +308,32 @@ const TasksView: React.FC<TasksViewProps> = ({
         </form>
       )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
-        {viewMode === 'list' ? (
-          <div className="space-y-10 pb-12">
-             {groupedItems.routines.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-primary/60">
-                    {t.tasks.routines}
-                  </h2>
-                  <div className="flex-1 h-[1px] bg-primary/10"></div>
-                </div>
-                <div className="grid lg:grid-cols-2 gap-3">
-                  {groupedItems.routines.map(t => renderTaskCard(t))}
-                </div>
-              </section>
-            )}
+      {/* Content Area */}
+      <div className="flex-1 min-h-0 flex flex-col md:block">
+        {/* Mobile Tab Switcher */}
+        <div className="md:hidden flex bg-beige-soft p-1 rounded-xl mb-4 shrink-0 overflow-x-auto">
+          {priorities.map(p => (
+            <button
+              key={p}
+              onClick={() => setActiveMobileTab(p)}
+              className={`flex-1 min-w-[80px] py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                activeMobileTab === p ? 'bg-white shadow-md text-charcoal' : 'text-charcoal/40'
+              }`}
+            >
+              {t.tasks.priorities[p].split(' ')[0]} {/* Short name for mobile */}
+            </button>
+          ))}
+        </div>
 
-            <section className="space-y-4">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-                  {t.tasks.oneOffs} • {t.tasks.today}
-                </h2>
-                <div className="flex-1 h-[1px] bg-charcoal/5"></div>
-              </div>
-              <div className="grid gap-3">
-                {groupedItems.todayOneOffs.length > 0 ? groupedItems.todayOneOffs.map(t => renderTaskCard(t)) : (
-                  <div className="py-8 text-center border-2 border-dashed border-charcoal/5 rounded-[2rem]">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-charcoal/20">{t.tasks.noTasks}</p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {groupedItems.tomorrowTasks.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">
-                    {t.tasks.tomorrow}
-                  </h2>
-                  <div className="flex-1 h-[1px] bg-charcoal/5"></div>
-                </div>
-                <div className="grid gap-3">
-                  {groupedItems.tomorrowTasks.map(t => renderTaskCard(t))}
-                </div>
-              </section>
-            )}
-
-            {groupedItems.failedTasks.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xs font-extrabold uppercase tracking-widest text-red-300">{t.tasks.abandoned}</h2>
-                  <div className="flex-1 h-[1px] bg-red-100"></div>
-                </div>
-                <div className="grid gap-3">
-                  {groupedItems.failedTasks.map(t => renderTaskCard(t))}
-                </div>
-              </section>
-            )}
-
-            <div className="grid lg:grid-cols-2 gap-10">
-              {groupedItems.laterTasks.length > 0 && (
-                <section className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.upcoming}</h2>
-                  </div>
-                  <div className="grid gap-3">
-                    {groupedItems.laterTasks.map(t => renderTaskCard(t))}
-                  </div>
-                </section>
-              )}
-              {groupedItems.completedTasks.length > 0 && (
-                <section className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-xs font-extrabold uppercase tracking-widest text-charcoal/30">{t.tasks.completed}</h2>
-                  </div>
-                  <div className="grid gap-3">
-                    {groupedItems.completedTasks.map(t => renderTaskCard(t))}
-                  </div>
-                </section>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex h-full pb-6 overflow-x-auto snap-x snap-mandatory gap-4 md:gap-6 px-1">
-             {columns.map(col => (
-               <div 
-                 key={col.id} 
-                 onDragOver={onDragOver}
-                 onDrop={(e) => onDrop(e, col.id)}
-                 className={`flex-col shrink-0 w-[85vw] md:w-80 h-full rounded-[2.5rem] p-4 flex snap-center transition-all ${col.colorClass} border border-transparent hover:border-charcoal/5`}
-               >
-                  <div className="flex items-center gap-2 mb-4 px-2 py-2">
-                     <div className={`size-2 rounded-full ${col.id === 'todo' ? 'bg-primary' : 'bg-charcoal/20'}`}></div>
-                     <h3 className="text-xs font-black uppercase tracking-widest text-charcoal/60">{col.label}</h3>
-                     <span className="text-[10px] font-bold text-charcoal/20 ml-auto bg-white/50 px-2 py-1 rounded-full">{col.items.length}</span>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto space-y-3 scrollbar-hide pr-1 min-h-0">
-                     {col.items.map(t => renderTaskCard(t, true))}
-                     {col.items.length === 0 && (
-                       <div className="h-24 flex items-center justify-center text-[10px] text-charcoal/10 font-black uppercase tracking-widest border-2 border-dashed border-charcoal/5 rounded-2xl">
-                         Empty
-                       </div>
-                     )}
-                  </div>
-               </div>
-             ))}
-          </div>
-        )}
+        {/* Desktop Grid / Mobile Active View */}
+        <div className="h-full md:grid md:grid-cols-4 md:gap-4 hidden">
+          {priorities.map(p => renderColumn(p))}
+        </div>
+        
+        {/* Mobile Single Column View */}
+        <div className="md:hidden flex-1 min-h-0">
+          {renderColumn(activeMobileTab)}
+        </div>
       </div>
     </div>
   );
