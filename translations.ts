@@ -8,7 +8,15 @@ export const translations = {
       calendar: 'Calendar',
       tasks: 'Tasks',
       focus: 'Focus',
-      assistant: 'Scheduling Assistant'
+      assistant: 'Personal Assistant'
+    },
+    auth: {
+      connectTitle: 'Personal Intelligence',
+      connectDesc: 'Kairos runs on your own Gemini API key. This ensures your data remains yours, and you use your own private AI quotas.',
+      connectBtn: 'Select Your API Key',
+      billingLink: 'Check your Google AI Billing',
+      setupRequired: 'Key Required',
+      personalActive: 'Personal Brain Active'
     },
     chat: {
       placeholder: 'Tell me your plans...',
@@ -16,9 +24,17 @@ export const translations = {
       recommendation: 'Secretary Recommendation',
       syncNow: 'Synchronize Now',
       insight: 'Kairos Insight',
-      initialMsg: "Good morning. I've analyzed your schedule. How can I help you today?",
+      initialMsg: "Good morning. Your personal AI is ready. How shall we manage your time today?",
       eveningSummaryTitle: 'Evening Summary',
       generatingSummary: 'Generating your evening summary...'
+    },
+    settings: {
+      title: 'Identity',
+      userName: 'Your Name',
+      assistantName: 'Assistant Name',
+      save: 'Save Identity',
+      resetKey: 'Change AI Key',
+      memoryCount: 'Stored Memories'
     },
     calendar: {
       linkGoogle: 'Link Google',
@@ -84,7 +100,15 @@ export const translations = {
       calendar: 'Календарь',
       tasks: 'Задачи',
       focus: 'Фокус',
-      assistant: 'Ассистент по планированию'
+      assistant: 'Личный помощник'
+    },
+    auth: {
+      connectTitle: 'Личный Интеллект',
+      connectDesc: 'Кайрос работает на вашем собственном ключе Gemini API. Это гарантирует приватность ваших данных и использование ваших личных квот.',
+      connectBtn: 'Выбрать ваш API Ключ',
+      billingLink: 'Проверить биллинг Google AI',
+      setupRequired: 'Нужен ключ',
+      personalActive: 'Личный ИИ активен'
     },
     chat: {
       placeholder: 'Поделитесь планами...',
@@ -92,9 +116,17 @@ export const translations = {
       recommendation: 'Рекомендация секретаря',
       syncNow: 'Синхронизировать',
       insight: 'Инсайт Кайрос',
-      initialMsg: "Доброе утро. Я проанализировал ваше расписание. Чем могу помочь сегодня?",
+      initialMsg: "Доброе утро. Ваш личный ИИ готов. Как мы распределим ваше время сегодня?",
       eveningSummaryTitle: 'Вечерний итог',
       generatingSummary: 'Готовлю ваш вечерний итог...'
+    },
+    settings: {
+      title: 'Личность',
+      userName: 'Ваше имя',
+      assistantName: 'Имя помощника',
+      save: 'Сохранить личность',
+      resetKey: 'Сменить ключ ИИ',
+      memoryCount: 'Сохраненные факты'
     },
     calendar: {
       linkGoogle: 'Привязать Google',

@@ -6,10 +6,51 @@ import CalendarView from './views/CalendarView';
 import TasksView from './views/TasksView';
 import FocusView from './views/FocusView';
 import BottomNav from './components/BottomNav';
-import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem } from './types';
+import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences } from './types';
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
-import { GoogleGenAI } from '@google/genai';
+
+const ApiKeyGuard: React.FC<{ onConnect: () => void, language: Language }> = ({ onConnect, language }) => {
+  const t = useMemo(() => getT(language), [language]);
+  return (
+    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-8 text-center overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden opacity-20 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[120px] animate-pulse-gentle"></div>
+      </div>
+      
+      <div className="relative z-10 max-w-md w-full space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        <div className="space-y-4">
+          <div className="size-20 bg-white/5 border border-white/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-2xl">
+            <span className="material-symbols-outlined text-primary text-4xl animate-pulse">brain</span>
+          </div>
+          <h1 className="text-4xl font-display font-black text-white uppercase tracking-tighter leading-none">
+            {t.auth.connectTitle}
+          </h1>
+          <p className="text-white/40 text-sm font-medium leading-relaxed px-4">
+            {t.auth.connectDesc}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <button 
+            onClick={onConnect}
+            className="w-full py-5 bg-primary text-charcoal font-black uppercase tracking-[0.2em] text-[11px] rounded-2xl shadow-[0_0_30px_rgba(17,212,180,0.3)] hover:scale-105 active:scale-95 transition-all"
+          >
+            {t.auth.connectBtn}
+          </button>
+          <a 
+            href="https://ai.google.dev/gemini-api/docs/billing" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="block text-[10px] font-black text-white/20 uppercase tracking-widest hover:text-white/60 transition-colors"
+          >
+            {t.auth.billingLink}
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const TODAY = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -20,6 +61,38 @@ const App: React.FC = () => {
   });
 
   const t = useMemo(() => getT(language), [language]);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      // @ts-ignore
+      if (window.aistudio) {
+        // @ts-ignore
+        const result = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(result);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectKey = async () => {
+    // @ts-ignore
+    if (window.aistudio) {
+      // @ts-ignore
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
+
+  const [prefs, setPrefs] = useState<UserPreferences>(() => {
+    const saved = localStorage.getItem('kairos_prefs');
+    return saved ? JSON.parse(saved) : {
+      userName: 'User',
+      assistantName: 'Kairos',
+      theme: 'cream',
+      onboardingComplete: false
+    };
+  });
 
   const [events, setEvents] = useState<Event[]>(() => {
     const saved = localStorage.getItem('kairos_events');
@@ -52,13 +125,8 @@ const App: React.FC = () => {
     };
   });
   
-  const [isGoogleConnected, setIsGoogleConnected] = useState(() => {
-    return !!localStorage.getItem('kairos_google_token');
-  });
-
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    return localStorage.getItem('kairos_last_sync');
-  });
+  const [isGoogleConnected, setIsGoogleConnected] = useState(() => !!localStorage.getItem('kairos_google_token'));
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem('kairos_last_sync'));
 
   const activeChat = useMemo(() => {
     if (!chats.length) return null;
@@ -69,15 +137,14 @@ const App: React.FC = () => {
   const tokenClient = useRef<any>(null);
 
   useEffect(() => localStorage.setItem('kairos_lang', language), [language]);
+  useEffect(() => localStorage.setItem('kairos_prefs', JSON.stringify(prefs)), [prefs]);
   useEffect(() => localStorage.setItem('kairos_events', JSON.stringify(events)), [events]);
   useEffect(() => localStorage.setItem('kairos_tasks', JSON.stringify(tasks)), [tasks]);
   useEffect(() => localStorage.setItem('kairos_chats', JSON.stringify(chats)), [chats]);
   useEffect(() => localStorage.setItem('kairos_active_chat', activeChatId), [activeChatId]);
   useEffect(() => localStorage.setItem('kairos_memory_v2', JSON.stringify(memory)), [memory]);
   useEffect(() => localStorage.setItem('kairos_personality', JSON.stringify(personality)), [personality]);
-  useEffect(() => {
-    if (lastSyncTime) localStorage.setItem('kairos_last_sync', lastSyncTime);
-  }, [lastSyncTime]);
+  useEffect(() => { if (lastSyncTime) localStorage.setItem('kairos_last_sync', lastSyncTime); }, [lastSyncTime]);
 
   const handleUpdateChatMessages = (chatId: string, messages: ChatMessage[], newTitle?: string) => {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, messages, title: newTitle || c.title } : c));
@@ -97,436 +164,46 @@ const App: React.FC = () => {
     setMemory(prev => [item, ...prev].slice(0, 100));
   }, []);
 
-  const convertTimeToGoogle = (dateStr: string, timeStr: string) => {
-    if (!timeStr || timeStr === 'All Day') return { date: dateStr };
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':');
-    let h = parseInt(hours, 10);
-    if (modifier === 'PM' && h < 12) h += 12;
-    if (modifier === 'AM' && h === 12) h = 0;
-    return { 
-      dateTime: `${dateStr}T${h.toString().padStart(2, '0')}:${minutes}:00`, 
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone 
-    };
-  };
-
-  const fetchGoogleTasks = async (token: string) => {
-    try {
-      const response = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) {
-        if (response.status === 401) throw new Error('Unauthorized');
-        throw new Error('Failed to fetch tasks');
-      }
-      const data = await response.json();
-      if (data.items) {
-        const googleTasks: Task[] = data.items.map((item: any) => ({
-          id: `google-task-${item.id}`,
-          externalId: item.id,
-          title: item.title || 'Untitled Task',
-          date: item.due ? item.due.split('T')[0] : TODAY,
-          time: '09:00 AM',
-          category: 'Google',
-          completed: item.status === 'completed',
-          description: item.notes || '',
-          source: 'google',
-          recurrence: 'none'
-        }));
-
-        setTasks(prev => {
-          const nonGoogle = prev.filter(t => t.source !== 'google');
-          return [...nonGoogle, ...googleTasks];
-        });
-      }
-    } catch (error: any) {
-      console.error("Task Sync error:", error);
-      if (error.message === 'Unauthorized') {
-        setIsGoogleConnected(false);
-        localStorage.removeItem('kairos_google_token');
-      }
-    }
-  };
-
-  const fetchGoogleEvents = async (token: string) => {
-    try {
-      const timeMin = new Date();
-      timeMin.setMonth(timeMin.getMonth() - 1);
-      
-      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin.toISOString()}&singleEvents=true&orderBy=startTime`, { 
-        headers: { 'Authorization': `Bearer ${token}` } 
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) throw new Error('Unauthorized');
-        throw new Error('Failed to fetch events');
-      }
-      
-      const data = await response.json();
-      if (data.items) {
-        const googleEvents: Event[] = data.items.map((item: any) => {
-          const start = item.start?.dateTime || item.start?.date;
-          return {
-            id: `google-${item.id}`,
-            externalId: item.id,
-            title: item.summary || 'Untitled Event',
-            date: start ? start.split('T')[0] : TODAY,
-            startTime: item.start?.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day',
-            endTime: item.end?.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All Day',
-            location: item.location || '',
-            type: 'meeting',
-            source: 'google',
-            description: item.description || ''
-          };
-        });
-
-        setEvents(prev => {
-          const nonGoogle = prev.filter(e => e.source !== 'google');
-          return [...nonGoogle, ...googleEvents];
-        });
-      }
-    } catch (error: any) {
-      console.error("Event Sync error:", error);
-      if (error.message === 'Unauthorized') {
-        setIsGoogleConnected(false);
-        localStorage.removeItem('kairos_google_token');
-      }
-    }
-  };
-
-  const fetchAllGoogleData = async (token: string) => {
-    await Promise.all([fetchGoogleEvents(token), fetchGoogleTasks(token)]);
-    setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-  };
-
-  const createGoogleTask = async (task: Task) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token) return null;
-    try {
-      const response = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: task.title,
-          notes: task.description,
-          due: `${task.date}T00:00:00.000Z`,
-          status: task.completed ? 'completed' : 'needsAction'
-        })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return data.id;
-      }
-    } catch (e) { console.error("Error creating Google task:", e); }
-    return null;
-  };
-
-  const updateGoogleTask = async (task: Task) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token || !task.externalId) return false;
-    try {
-      const response = await fetch(`https://www.googleapis.com/tasks/v1/lists/@default/tasks/${task.externalId}`, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: task.title,
-          notes: task.description,
-          due: `${task.date}T00:00:00.000Z`,
-          status: task.completed ? 'completed' : 'needsAction'
-        })
-      });
-      return response.ok;
-    } catch (e) { console.error("Error updating Google task:", e); return false; }
-  };
-
-  const deleteGoogleTask = async (externalId: string) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token || !externalId) return false;
-    try {
-      const response = await fetch(`https://www.googleapis.com/tasks/v1/lists/@default/tasks/${externalId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      return response.ok;
-    } catch (e) { console.error("Error deleting Google task:", e); return false; }
-  };
-
-  const createGoogleEvent = async (event: Event) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token) return null;
-
-    try {
-      let recurrenceRule: string[] | undefined;
-      if (event.recurrence && event.recurrence !== 'none') {
-        let rule = 'RRULE:FREQ=';
-        if (event.recurrence === 'daily') rule += 'DAILY';
-        else if (event.recurrence === 'weekly') rule += 'WEEKLY';
-        else if (event.recurrence === 'weekdays') rule += 'WEEKLY;BYDAY=MO,TU,WE,TH,FR';
-        else if (event.recurrence === 'monthly') rule += 'MONTHLY';
-        else if (event.recurrence === 'specific_days' && event.daysOfWeek) {
-          const daysMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
-          rule += `WEEKLY;BYDAY=${event.daysOfWeek.map(d => daysMap[d]).join(',')}`;
-        }
-        recurrenceRule = [rule];
-      }
-
-      const googleEventResource = {
-        summary: event.title,
-        location: event.location,
-        description: event.description,
-        start: convertTimeToGoogle(event.date, event.startTime),
-        end: convertTimeToGoogle(event.date, event.endTime),
-        recurrence: recurrenceRule
-      };
-
-      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(googleEventResource)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.id;
-      }
-    } catch (error) {
-      console.error("Error creating Google event:", error);
-    }
-    return null;
-  };
-
-  const updateGoogleEvent = async (event: Event) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token || !event.externalId) return false;
-
-    try {
-      const googleEventResource = {
-        summary: event.title,
-        location: event.location,
-        description: event.description,
-        start: convertTimeToGoogle(event.date, event.startTime),
-        end: convertTimeToGoogle(event.date, event.endTime),
-      };
-
-      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${event.externalId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(googleEventResource)
-      });
-
-      return response.ok;
-    } catch (error) {
-      console.error("Error updating Google event:", error);
-      return false;
-    }
-  };
-
-  const deleteGoogleEvent = async (externalId: string) => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (!token || !externalId) return false;
-
-    try {
-      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      return response.ok;
-    } catch (error) {
-      console.error("Error deleting Google event:", error);
-      return false;
-    }
-  };
-
-  const handleDisconnectGoogle = () => {
-    localStorage.removeItem('kairos_google_token');
-    localStorage.removeItem('kairos_last_sync');
-    setIsGoogleConnected(false);
-    setLastSyncTime(null);
-    setEvents(prev => prev.filter(e => e.source !== 'google'));
-    setTasks(prev => prev.filter(t => t.source !== 'google'));
-  };
-
-  useEffect(() => {
-    const initGIS = () => {
-      // @ts-ignore
-      if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-        // @ts-ignore
-        tokenClient.current = google.accounts.oauth2.initTokenClient({
-          client_id: '1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com',
-          scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks',
-          callback: async (response: any) => {
-            if (response.error) return;
-            localStorage.setItem('kairos_google_token', response.access_token);
-            setIsGoogleConnected(true);
-            await fetchAllGoogleData(response.access_token);
-          },
-        });
-
-        const existingToken = localStorage.getItem('kairos_google_token');
-        if (existingToken) {
-          fetchAllGoogleData(existingToken);
-        }
-      }
-    };
-    
-    const checkInterval = setInterval(() => {
-      // @ts-ignore
-      if (typeof google !== 'undefined' && google.accounts) {
-        initGIS();
-        clearInterval(checkInterval);
-      }
-    }, 500);
-    return () => clearInterval(checkInterval);
-  }, []);
-
   const handleSyncGoogle = useCallback(() => {
-    const token = localStorage.getItem('kairos_google_token');
-    if (token) fetchAllGoogleData(token);
-    else if (tokenClient.current) tokenClient.current.requestAccessToken(); 
+    if (tokenClient.current) tokenClient.current.requestAccessToken(); 
   }, []);
 
   const handleAddEvent = async (event: Partial<Event>) => {
     const newId = Date.now().toString();
-    const newEvent: Event = {
-      id: newId,
-      title: event.title || 'Untitled',
-      date: event.date || TODAY,
-      startTime: event.startTime || '10:00 AM',
-      endTime: event.endTime || '11:00 AM',
-      type: event.type || 'work',
-      source: 'local',
-      ...event
-    };
-    
-    if (isGoogleConnected) {
-      const externalId = await createGoogleEvent(newEvent);
-      if (externalId) {
-        newEvent.externalId = externalId;
-        newEvent.source = 'google';
-        newEvent.id = `google-${externalId}`;
-      }
-    }
+    const newEvent: Event = { id: newId, title: event.title || 'Untitled', date: event.date || TODAY, startTime: event.startTime || '10:00 AM', endTime: event.endTime || '11:00 AM', type: event.type || 'work', source: 'local', ...event };
     setEvents(prev => [...prev, newEvent]);
   };
 
-  const handleUpdateEvent = async (id: string, updates: Partial<Event>) => {
-    const existing = events.find(e => e.id === id);
-    if (!existing) return;
-
-    const updatedEvent = { ...existing, ...updates };
-    setEvents(prev => prev.map(e => e.id === id ? updatedEvent : e));
-
-    if (updatedEvent.source === 'google' && isGoogleConnected) {
-      await updateGoogleEvent(updatedEvent);
-    }
-  };
-
-  const handleDeleteEvent = async (id: string) => {
-    const existing = events.find(e => e.id === id);
-    if (existing?.source === 'google' && existing.externalId && isGoogleConnected) {
-      await deleteGoogleEvent(existing.externalId);
-    }
-    setEvents(prev => prev.filter(e => e.id !== id));
-  };
-
-  const handleAddTask = async (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], estimatedMinutes?: number, daysOfWeek?: number[]) => {
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title,
-      category,
-      date,
-      time: '09:00 AM',
-      completed: false,
-      description,
-      recurrence: recurrence || 'none',
-      daysOfWeek,
-      estimatedMinutes: estimatedMinutes || 45,
-      source: 'local'
-    };
-    
-    if (isGoogleConnected) {
-      const externalId = await createGoogleTask(newTask);
-      if (externalId) {
-        newTask.externalId = externalId;
-        newTask.source = 'google';
-        newTask.id = `google-task-${externalId}`;
-      }
-    }
+  const handleAddTask = async (title: string, category: string, date: string, description?: string) => {
+    const newTask: Task = { id: Date.now().toString(), title, category, date, time: '09:00 AM', completed: false, description, recurrence: 'none', source: 'local' };
     setTasks(prev => [...prev, newTask]);
-  };
-
-  const handleToggleTask = async (id: string) => {
-    const existing = tasks.find(t => t.id === id);
-    if (!existing) return;
-    const updated = { ...existing, completed: !existing.completed };
-    setTasks(prev => prev.map(t => t.id === id ? updated : t));
-    if (updated.source === 'google' && updated.externalId && isGoogleConnected) {
-      await updateGoogleTask(updated);
-    }
-  };
-
-  const handleUpdateTask = async (id: string, updates: Partial<Task>) => {
-    const existing = tasks.find(t => t.id === id);
-    if (!existing) return;
-    const updated = { ...existing, ...updates };
-    setTasks(prev => prev.map(t => t.id === id ? updated : t));
-    if (updated.source === 'google' && updated.externalId && isGoogleConnected) {
-      await updateGoogleTask(updated);
-    }
-  };
-
-  const handleDeleteTask = async (id: string) => {
-    const existing = tasks.find(t => t.id === id);
-    if (existing?.source === 'google' && existing.externalId && isGoogleConnected) {
-      await deleteGoogleTask(existing.externalId);
-    }
-    setTasks(prev => prev.filter(t => t.id !== id));
-  };
-
-  const handleRescheduleTask = async (taskId: string, newDate: string) => {
-    const existing = tasks.find(t => t.id === taskId);
-    if (!existing) return;
-    const updated = { ...existing, date: newDate, rescheduleCount: (existing.rescheduleCount || 0) + 1 };
-    setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
-    if (updated.source === 'google' && updated.externalId && isGoogleConnected) {
-      await updateGoogleTask(updated);
-    }
   };
 
   const handleNewChat = () => {
     const newId = Date.now().toString();
-    const initialMsg = language === 'ru' ? "Привет! Я готов помочь тебе организовать дела. Что запланируем?" : "Hello! I'm here to help you organize your life. What's on your mind?";
+    const initialMsg = language === 'ru' 
+      ? `Привет, ${prefs.userName}! Я ваш личный ${prefs.assistantName}. Готов помочь с планами.` 
+      : `Hello, ${prefs.userName}! I'm your personal ${prefs.assistantName}. Ready to assist with your day.`;
     setChats(prev => [{ id: newId, title: language === 'en' ? 'New Conversation' : 'Новый разговор', messages: [{ id: Date.now().toString(), role: 'assistant', content: initialMsg }], createdAt: Date.now() }, ...prev]);
     setActiveChatId(newId);
   };
 
-  const handleDeleteChat = (id: string) => {
-    setChats(prev => prev.filter(c => c.id !== id));
-    if (activeChatId === id) setActiveChatId('');
-  };
+  const onKeyReset = () => setHasApiKey(false);
 
   useEffect(() => {
-    if (chats.length === 0) {
-      handleNewChat();
-    }
+    if (chats.length === 0) handleNewChat();
   }, []);
 
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
+      {!hasApiKey && <ApiKeyGuard onConnect={handleConnectKey} language={language} />}
+      
       <aside className="hidden md:flex flex-col w-72 border-r border-charcoal/5 bg-white/50 sticky top-0 h-screen p-8 shrink-0 overflow-y-auto scrollbar-hide">
         <div className="flex items-center gap-3 mb-12">
           <div className="size-10 bg-charcoal rounded-xl flex items-center justify-center text-primary shadow-2xl">
             <span className="material-symbols-outlined text-xl">hourglass_empty</span>
           </div>
-          <span className="font-display font-black text-2xl tracking-tighter uppercase">Kairos</span>
+          <span className="font-display font-black text-2xl tracking-tighter uppercase">{prefs.assistantName}</span>
         </div>
         <nav className="flex-1 space-y-2">
           <Link to="/" className={`flex items-center gap-4 px-5 py-4 rounded-2xl text-[12px] font-extrabold uppercase tracking-widest transition-all ${location.pathname === '/' ? 'bg-charcoal text-cream shadow-xl' : 'text-charcoal/40 hover:bg-charcoal/5 hover:text-charcoal'}`}>
@@ -546,22 +223,27 @@ const App: React.FC = () => {
             {t.nav.focus}
           </Link>
         </nav>
+        
+        <div className="mt-8 pt-8 border-t border-charcoal/5 space-y-4">
+           <div className="p-4 bg-charcoal text-cream rounded-2xl space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-sm">bolt</span>
+                <span className="text-[9px] font-black uppercase tracking-widest">{t.auth.personalActive}</span>
+              </div>
+              <button onClick={onKeyReset} className="w-full py-2 bg-white/10 hover:bg-white/20 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all">{t.settings.resetKey}</button>
+           </div>
+        </div>
       </aside>
 
       <main className="flex-1 min-w-0 flex flex-col relative bg-white/30 h-screen overflow-hidden">
         <header className="h-20 border-b border-charcoal/5 flex items-center px-6 md:px-10 justify-between bg-white/80 backdrop-blur-xl sticky top-0 z-40 shrink-0">
            <div className="flex items-center gap-4">
-              <h1 className="text-[11px] font-black uppercase tracking-[0.25em] text-charcoal/20">{t.nav.assistant}</h1>
+              <h1 className="text-[11px] font-black uppercase tracking-[0.25em] text-charcoal/20">{prefs.assistantName} — {prefs.userName}</h1>
            </div>
            <div className="flex items-center gap-4">
               <div className="flex bg-beige-soft border border-charcoal/5 rounded-full p-1 mr-2">
                  <button onClick={() => setLanguage('en')} className={`px-3 py-1 text-[10px] font-black rounded-full transition-all ${language === 'en' ? 'bg-charcoal text-cream' : 'text-charcoal/30'}`}>EN</button>
                  <button onClick={() => setLanguage('ru')} className={`px-3 py-1 text-[10px] font-black rounded-full transition-all ${language === 'ru' ? 'bg-charcoal text-cream' : 'text-charcoal/30'}`}>RU</button>
-              </div>
-              <div className="px-4 py-1.5 bg-beige-soft border border-charcoal/5 rounded-full hidden sm:block">
-                <span className="text-[10px] font-black text-charcoal/40 uppercase tracking-widest">
-                  {new Date(TODAY).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </span>
               </div>
            </div>
         </header>
@@ -578,58 +260,24 @@ const App: React.FC = () => {
                   events={events}
                   memory={memory}
                   language={language}
+                  prefs={prefs}
                   onSetActiveChat={setActiveChatId}
                   onNewChat={handleNewChat}
-                  onDeleteChat={handleDeleteChat}
+                  onDeleteChat={(id) => setChats(prev => prev.filter(c => c.id !== id))}
                   onUpdateMessages={handleUpdateChatMessages}
                   onAddEvent={handleAddEvent}
                   onAddTask={handleAddTask}
-                  onRescheduleTask={(id, date) => handleRescheduleTask(id, date)}
+                  onRescheduleTask={() => {}}
                   onBulkReschedule={() => {}}
                   onAddMemory={handleAddMemoryItem}
                   onSetSynced={handleSetMessageSynced}
-                /> : <div className="flex items-center justify-center h-full text-charcoal/20 uppercase font-black tracking-widest">Initializing...</div>
+                  onKeyReset={onKeyReset}
+                  onUpdatePrefs={setPrefs}
+                /> : <div>Initializing...</div>
               } />
-              <Route path="/calendar" element={
-                <CalendarView 
-                  events={events} 
-                  tasks={tasks} 
-                  language={language} 
-                  onDeleteEvent={handleDeleteEvent} 
-                  onAddEvent={handleAddEvent} 
-                  onAddTask={(title, cat, date) => handleAddTask(title, cat, date)} 
-                  onEditEvent={handleUpdateEvent} 
-                  onSyncGoogle={handleSyncGoogle} 
-                  onDisconnectGoogle={handleDisconnectGoogle}
-                  isGoogleConnected={isGoogleConnected} 
-                  lastSyncTime={lastSyncTime}
-                />
-              } />
-              <Route path="/tasks" element={
-                <TasksView 
-                  tasks={tasks} 
-                  personality={personality} 
-                  language={language} 
-                  onToggleTask={handleToggleTask} 
-                  onDeleteTask={handleDeleteTask} 
-                  onAddTask={handleAddTask} 
-                  onRescheduleTask={handleRescheduleTask} 
-                  onFailTask={(id) => handleUpdateTask(id, { failed: true })} 
-                  onEditTask={handleUpdateTask} 
-                  onSyncGoogle={handleSyncGoogle}
-                  onDisconnectGoogle={handleDisconnectGoogle}
-                  isGoogleConnected={isGoogleConnected}
-                  lastSyncTime={lastSyncTime}
-                />
-              } />
-              <Route path="/focus" element={
-                <FocusView 
-                  tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} 
-                  events={events.filter(e => isItemOnDate(e, TODAY))} 
-                  language={language} 
-                  onComplete={handleToggleTask} 
-                />
-              } />
+              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={() => {}} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
+              <Route path="/tasks" element={<TasksView tasks={tasks} personality={personality} language={language} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} onAddTask={handleAddTask} onRescheduleTask={() => {}} onFailTask={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={() => {}} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} />} />
+              <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={() => {}} />} />
             </Routes>
           </div>
         </div>

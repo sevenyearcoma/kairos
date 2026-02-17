@@ -7,6 +7,13 @@ export interface MemoryItem {
   timestamp: number;
 }
 
+export interface UserPreferences {
+  userName: string;
+  assistantName: string;
+  theme: 'light' | 'dark' | 'cream';
+  onboardingComplete: boolean;
+}
+
 export interface Event {
   id: string;
   title: string;
@@ -55,7 +62,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  isSynced?: boolean; // Persistently track if the draft in this message was added
+  isSynced?: boolean; 
   draftEvent?: Partial<Event>;
   draftTask?: Partial<Task>;
   draftReschedule?: { 
