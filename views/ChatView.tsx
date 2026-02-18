@@ -178,6 +178,15 @@ const ChatView: React.FC<ChatViewProps> = ({
     recognition.start();
   };
 
+  const handleClearChat = () => {
+    if (messages.length <= 1) return;
+    if (window.confirm(t.chat.clearConfirm)) {
+      // Keep only the first message (the welcome message)
+      const firstMsg = messages[0];
+      onUpdateMessages(activeChat.id, [firstMsg]);
+    }
+  };
+
   const handleSend = async () => {
     if (isListening) stopListening();
     if (!input.trim() || isAiThinking) return;
@@ -460,9 +469,19 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       <div className="flex items-center justify-between px-6">
          <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">{t.chat.capacity(todayEventsCount, todayTasksCount)}</h2>
-         <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
-           <span className="material-symbols-outlined text-xl">settings</span>
-         </button>
+         <div className="flex gap-2">
+            <button 
+              onClick={handleClearChat}
+              disabled={messages.length <= 1}
+              className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30 disabled:hover:text-charcoal/40 disabled:hover:bg-white"
+              title={t.chat.clearChat}
+            >
+              <span className="material-symbols-outlined text-xl">sweep</span>
+            </button>
+            <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
+              <span className="material-symbols-outlined text-xl">settings</span>
+            </button>
+         </div>
       </div>
 
       <div className="flex-1 flex flex-col min-h-0 bg-white/40 border border-charcoal/5 rounded-[2.5rem] shadow-sm overflow-hidden">

@@ -72,7 +72,6 @@ To get the absolute most out of Kairos, follow this flow:
     *   Don't just say "Hi". Tell Kairos about yourself immediately.
     *   *Example:* "I'm a backend engineer. I like to do deep work between 9 AM and 11 AM. I hate meetings after 4 PM."
     *   *Why:* The **Memory Agent** will extract these facts and use them for every future scheduling decision.
-    *   (It is optional though. Kairos learns about you every time you create a task / event. all the data is stored in localStorage - neither I nor Google have the data about you <3)
 
 2.  **Use Voice for Brain Dumps:**
     *   Click the **Mic icon** in the Chat or Quick Add modal.

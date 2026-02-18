@@ -24,57 +24,86 @@ const App: React.FC = () => {
   }, []);
 
   const [language, setLanguage] = useState<Language>(() => {
-    const saved = localStorage.getItem('kairos_lang');
-    return (saved as Language) || 'en';
+    try {
+      const saved = localStorage.getItem('kairos_lang');
+      return (saved === 'en' || saved === 'ru') ? saved : 'en';
+    } catch { return 'en'; }
   });
 
   const t = useMemo(() => getT(language), [language]);
 
   const [prefs, setPrefs] = useState<UserPreferences>(() => {
-    const saved = localStorage.getItem('kairos_prefs');
-    return saved ? JSON.parse(saved) : {
-      userName: 'User',
-      assistantName: 'Kairos',
-      theme: 'cream',
-      onboardingComplete: false
-    };
+    try {
+      const saved = localStorage.getItem('kairos_prefs');
+      return saved ? JSON.parse(saved) : {
+        userName: 'User',
+        assistantName: 'Kairos',
+        theme: 'cream',
+        onboardingComplete: false
+      };
+    } catch (e) {
+      console.error("Error loading prefs", e);
+      return { userName: 'User', assistantName: 'Kairos', theme: 'cream', onboardingComplete: false };
+    }
   });
 
   const [events, setEvents] = useState<Event[]>(() => {
-    const saved = localStorage.getItem('kairos_events');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kairos_events');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
+
   const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('kairos_tasks');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kairos_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
+
   const [chats, setChats] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem('kairos_chats');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kairos_chats');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
+
   const [activeChatId, setActiveChatId] = useState<string>(() => {
-    const saved = localStorage.getItem('kairos_active_chat');
-    return saved || '';
+    try {
+      const saved = localStorage.getItem('kairos_active_chat');
+      return saved || '';
+    } catch { return ''; }
   });
+
   const [memory, setMemory] = useState<MemoryItem[]>(() => {
-    const saved = localStorage.getItem('kairos_memory_v2');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('kairos_memory_v2');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
+
   const [personality, setPersonality] = useState<Personality>(() => {
-    const saved = localStorage.getItem('kairos_personality');
-    return saved ? JSON.parse(saved) : {
-      trust: 75,
-      respect: 65,
-      strictness: 20,
-      burnoutRisk: 15,
-      efficiency: 82
-    };
+    try {
+      const saved = localStorage.getItem('kairos_personality');
+      return saved ? JSON.parse(saved) : {
+        trust: 75,
+        respect: 65,
+        strictness: 20,
+        burnoutRisk: 15,
+        efficiency: 82
+      };
+    } catch {
+       return { trust: 75, respect: 65, strictness: 20, burnoutRisk: 15, efficiency: 82 };
+    }
   });
   
   // New Knowledge Base Agent State
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase>(() => {
-    const saved = localStorage.getItem('kairos_knowledge_base');
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('kairos_knowledge_base');
+      if (saved) return JSON.parse(saved);
+    } catch (e) { console.error("KB Load Error", e); }
+    
     // Default initial state
     return {
       user_name: 'User',

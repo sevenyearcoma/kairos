@@ -38,7 +38,9 @@ export const translations = {
       added: 'ADDED',
       accept: 'ACCEPT',
       capacity: (events: number, tasks: number) => `Capacity: ${events} Events, ${tasks} Tasks Today`,
-      initializing: 'Initializing Secretary...'
+      initializing: 'Initializing Secretary...',
+      clearChat: 'Clear Conversation',
+      clearConfirm: 'Clear this conversation? The context in memory will remain, but chat history will be deleted.'
     },
     settings: {
       title: 'Identity',
@@ -199,7 +201,9 @@ export const translations = {
       added: 'В СПИСКЕ',
       accept: 'ПОДТВЕРДИТЬ',
       capacity: (events: number, tasks: number) => `Загрузка: Событий — ${events}, Задач — ${tasks}`,
-      initializing: 'Запуск Секретаря...'
+      initializing: 'Запуск Секретаря...',
+      clearChat: 'Очистить чат',
+      clearConfirm: 'Очистить переписку? Контекст останется в памяти, но сообщения будут удалены.'
     },
     settings: {
       title: 'Личность',
