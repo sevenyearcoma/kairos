@@ -574,6 +574,7 @@ const TasksView: React.FC<TasksViewProps> = ({
                 )}
                 <input 
                   autoFocus
+                  maxLength={200}
                   className={`
                     w-full bg-transparent border-none focus:ring-0 text-xl font-bold placeholder:text-charcoal/10 pr-20 transition-all 
                     ${isListening ? 'text-red-600' : 'text-charcoal'}

@@ -267,6 +267,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
               )}
               <input 
                 autoFocus
+                maxLength={200}
                 className={`
                    w-full bg-beige-soft border-none rounded-xl py-4 pl-6 pr-20 text-sm font-bold placeholder:text-charcoal/10 focus:ring-2 focus:ring-primary transition-all 
                    ${isListening ? 'text-red-600 ring-2 ring-red-500/20' : ''}
