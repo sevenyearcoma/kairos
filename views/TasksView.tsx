@@ -149,7 +149,7 @@ const TasksView: React.FC<TasksViewProps> = ({
       // Highly condensed prompt for speed
       const prompt = `
         Role: Scheduler.
-        Task: Find 1-hour slot.
+        Task: Find optimal 1-hour slot.
         Context Date: ${localToday} (${new Date(localToday).toLocaleDateString('en-US', { weekday: 'short' })})
         
         Item: "${task.title}" (${task.category}, ${task.priority}). ${task.description || ''}
@@ -166,7 +166,7 @@ const TasksView: React.FC<TasksViewProps> = ({
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-flash-lite-latest', // Switched to lite for speed
+        model: 'gemini-3-flash-preview',
         contents: prompt,
         config: {
           responseMimeType: "application/json",
