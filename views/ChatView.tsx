@@ -463,6 +463,10 @@ const ChatView: React.FC<ChatViewProps> = ({
                 </div>
              </div>
              <button onClick={() => setShowSettings(false)} className="w-full py-4 bg-charcoal text-cream rounded-2xl font-black uppercase text-[10px] tracking-widest">{t.settings.save}</button>
+             
+             <a href="/privacy" target="_blank" rel="noopener noreferrer" className="block text-center text-[10px] font-bold text-charcoal/30 hover:text-charcoal mt-4 uppercase tracking-widest transition-colors">
+               {language === 'ru' ? 'Политика конфиденциальности' : 'Privacy Policy'}
+             </a>
           </div>
         </div>
       )}

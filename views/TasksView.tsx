@@ -52,6 +52,22 @@ const TasksView: React.FC<TasksViewProps> = ({
   const [selectedItem, setSelectedItem] = useState<Task | Event | null>(null); // For full edit modal
   const [startInEditMode, setStartInEditMode] = useState(false);
 
+  // Touch DnD State
+  const [touchDragItem, setTouchDragItem] = useState<{
+    id: string;
+    title: string;
+    category: string;
+    priority: TaskPriority;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const touchTimer = useRef<any>(null);
+  const touchStartPos = useRef<{x: number, y: number} | null>(null);
+
   // Voice Input State
   const [isListening, setIsListening] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -85,6 +101,45 @@ const TasksView: React.FC<TasksViewProps> = ({
     }
     return () => clearInterval(interval);
   }, [isListening]);
+
+  // Touch Drag Global Effect
+  useEffect(() => {
+    if (!touchDragItem) return;
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+        if (e.cancelable) e.preventDefault(); // Prevent scrolling while dragging
+        const touch = e.touches[0];
+        setTouchDragItem(prev => prev ? { ...prev, x: touch.clientX, y: touch.clientY } : null);
+    };
+
+    const handleGlobalTouchEnd = (e: TouchEvent) => {
+        const touch = e.changedTouches[0];
+        
+        // Element from point
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        const dropZone = target?.closest('[data-drop-zone]') as HTMLElement;
+        
+        if (dropZone) {
+            const newPriority = dropZone.getAttribute('data-drop-zone') as TaskPriority;
+            if (newPriority && newPriority !== touchDragItem.priority) {
+                onEditTask(touchDragItem.id, { priority: newPriority });
+                if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+            }
+        }
+        
+        setTouchDragItem(null);
+    };
+
+    document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+    document.addEventListener('touchend', handleGlobalTouchEnd);
+    document.addEventListener('touchcancel', handleGlobalTouchEnd);
+
+    return () => {
+        document.removeEventListener('touchmove', handleGlobalTouchMove);
+        document.removeEventListener('touchend', handleGlobalTouchEnd);
+        document.removeEventListener('touchcancel', handleGlobalTouchEnd);
+    };
+  }, [touchDragItem, onEditTask]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -268,7 +323,6 @@ const TasksView: React.FC<TasksViewProps> = ({
       const offset = now.getTimezoneOffset() * 60000;
       const localToday = new Date(now.getTime() - offset).toISOString().split('T')[0];
       
-      // Optimization: Filter out past events to reduce token usage and speed up processing
       const contextEvents = events
         .filter(e => (e.recurrence && e.recurrence !== 'none') || e.date >= localToday)
         .map(e => ({
@@ -280,16 +334,6 @@ const TasksView: React.FC<TasksViewProps> = ({
           daysOfWeek: e.daysOfWeek
         }));
 
-      // Tasks that are already scheduled/have dates (if any exist in this view)
-      const contextTasks = tasks
-        .filter(t => t.date && t.id !== task.id && t.date >= localToday)
-        .map(t => ({
-          title: t.title,
-          date: t.date,
-          priority: t.priority
-        }));
-
-      // Highly condensed prompt for speed
       const prompt = `
         Role: Scheduler.
         Task: Find optimal 1-hour slot.
@@ -377,6 +421,56 @@ const TasksView: React.FC<TasksViewProps> = ({
     setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
   };
 
+  // Touch Handlers for Items
+  const handleTouchStart = (e: React.TouchEvent, task: Task) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      
+      touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+      
+      // Long press to drag (300ms)
+      touchTimer.current = setTimeout(() => {
+          setTouchDragItem({
+              id: task.id,
+              title: task.title,
+              category: task.category,
+              priority: task.priority,
+              x: touch.clientX,
+              y: touch.clientY,
+              width: rect.width,
+              height: rect.height,
+              offsetX: touch.clientX - rect.left,
+              offsetY: touch.clientY - rect.top
+          });
+          if (navigator.vibrate) navigator.vibrate(50);
+      }, 300);
+  };
+
+  const handleTouchMoveItem = (e: React.TouchEvent) => {
+      if (!touchStartPos.current) return;
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+      
+      // If moved > 10px before timer, it's a scroll, cancel drag
+      if (dx > 10 || dy > 10) {
+          if (touchTimer.current) {
+              clearTimeout(touchTimer.current);
+              touchTimer.current = null;
+          }
+      }
+  };
+
+  const handleTouchEndItem = () => {
+      if (touchTimer.current) {
+          clearTimeout(touchTimer.current);
+          touchTimer.current = null;
+      }
+      touchStartPos.current = null;
+  };
+
   // Helper for random paper rotation
   const getRotation = (index: number) => {
     const rots = ['rotate-1', '-rotate-1', 'rotate-2', '-rotate-2', 'rotate-0', '-rotate-1'];
@@ -393,12 +487,13 @@ const TasksView: React.FC<TasksViewProps> = ({
     return (
       <div 
         key={priority}
+        data-drop-zone={priority}
         onDragOver={onDragOver}
         onDrop={(e) => onDrop(e, priority)}
-        className={`flex flex-col h-full rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden transition-all ${style.bg} border ${style.border}`}
+        className={`flex flex-col md:h-full w-full min-h-[160px] rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] transition-all ${style.bg} border ${style.border}`}
       >
         {/* Folder Tab Header */}
-        <div className={`px-5 py-3 flex justify-between items-center border-b ${style.border} bg-white/40`}>
+        <div className={`px-5 py-3 flex justify-between items-center border-b ${style.border} bg-white/40 sticky top-0 z-10 backdrop-blur-sm rounded-t-[2rem]`}>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${style.tab.replace('bg-', 'bg-opacity-50 ')}`}></div>
             <h3 className={`text-xs font-black uppercase tracking-widest ${style.text}`}>{mainTitle}</h3>
@@ -407,16 +502,17 @@ const TasksView: React.FC<TasksViewProps> = ({
         </div>
         
         {/* Stack Container */}
-        <div className="relative flex-1 p-4 overflow-y-auto scrollbar-hide">
+        <div className="relative flex-1 p-4 pb-12 overflow-visible md:overflow-y-auto scrollbar-hide">
           {items.length === 0 ? (
-             <div className="h-full flex flex-col items-center justify-center opacity-20 gap-2 min-h-[120px]">
+             <div className="h-full flex flex-col items-center justify-center opacity-20 gap-2 min-h-[80px]">
                 <span className="material-symbols-outlined text-4xl">folder_open</span>
                 <p className="text-[9px] font-black uppercase tracking-widest">{t.tasks.noTasks}</p>
              </div>
           ) : (
-             <div className="flex flex-col w-full pb-10 isolate space-y-[-16px]"> 
+             <div className="flex flex-col w-full pb-2 isolate space-y-[-16px]"> 
                 {items.map((task, index) => {
                   const isExpanded = expandedTaskId === task.id;
+                  const isDragging = touchDragItem?.id === task.id;
                   const rotationClass = isExpanded ? 'rotate-0' : getRotation(index);
                   const isProcessing = isAiProcessing === task.id;
 
@@ -426,13 +522,18 @@ const TasksView: React.FC<TasksViewProps> = ({
                        draggable
                        onDragStart={(e) => { e.stopPropagation(); onDragStart(e, task.id); }}
                        onClick={(e) => toggleExpand(task.id, e)}
+                       
+                       onTouchStart={(e) => handleTouchStart(e, task)}
+                       onTouchMove={handleTouchMoveItem}
+                       onTouchEnd={handleTouchEndItem}
+
                        style={{ zIndex: isExpanded ? 50 : index }} 
                        className={`
                          group relative w-full bg-[#FAF9F6] border border-charcoal/5 rounded-xl shadow-sm
-                         transition-all duration-300 ease-out cursor-pointer
-                         hover:z-[40] hover:-translate-y-2 hover:shadow-lg hover:rotate-0 hover:scale-[1.02]
+                         transition-all duration-300 ease-out cursor-pointer select-none
+                         ${isDragging ? 'opacity-30' : 'opacity-100'}
                          ${rotationClass}
-                         ${isExpanded ? 'mb-4 shadow-xl translate-y-0 scale-100 z-50' : ''}
+                         ${isExpanded ? 'mb-4 shadow-xl translate-y-0 scale-100 z-50' : 'hover:-translate-y-2 hover:shadow-lg hover:rotate-0 hover:scale-[1.02]'}
                        `}
                     >
                         {/* Card Face (Visible Strip) */}
@@ -514,7 +615,7 @@ const TasksView: React.FC<TasksViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0 px-4 md:px-0 relative h-full flex flex-col">
+    <div className="space-y-6 md:pb-0 px-4 md:px-0 relative h-full flex flex-col">
       <ItemDetailModal 
         item={selectedItem} 
         onClose={() => { setSelectedItem(null); setStartInEditMode(false); }} 
@@ -523,7 +624,29 @@ const TasksView: React.FC<TasksViewProps> = ({
         initialEditMode={startInEditMode}
       />
       
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 h-20">
+      {/* Ghost Element for Dragging */}
+      {touchDragItem && (
+        <div 
+            className="fixed z-[9999] pointer-events-none flex items-center gap-3 px-4 bg-white border border-charcoal/10 rounded-xl shadow-2xl opacity-90"
+            style={{
+                top: touchDragItem.y - touchDragItem.offsetY,
+                left: touchDragItem.x - touchDragItem.offsetX,
+                width: touchDragItem.width,
+                height: 50, // Collapsed height
+                transform: 'scale(1.05) rotate(2deg)',
+            }}
+        >
+             <div className={`shrink-0 size-2.5 rounded-full border-2 border-white shadow-sm
+                ${touchDragItem.category === 'Work' ? 'bg-blue-400' : 
+                  touchDragItem.category === 'Personal' ? 'bg-purple-400' : 
+                  touchDragItem.category === 'Meeting' ? 'bg-emerald-400' :
+                  'bg-amber-400'}
+             `}></div>
+             <span className="text-sm font-bold text-charcoal truncate">{touchDragItem.title}</span>
+        </div>
+      )}
+
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 h-auto md:h-20">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-charcoal">{t.tasks.title}</h1>
           <div className="flex items-center gap-4">
@@ -646,8 +769,8 @@ const TasksView: React.FC<TasksViewProps> = ({
         </form>
       )}
 
-      <div className="flex-1 min-h-0 pb-4">
-        <div className="h-full grid grid-cols-1 md:grid-cols-2 grid-rows-2 gap-6">
+      <div className="flex-1 min-h-0 md:pb-4 relative z-0 overflow-y-auto md:overflow-visible scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="flex flex-col md:grid md:grid-cols-2 md:grid-rows-2 gap-6 md:h-full pb-32 md:pb-0">
           {priorities.map(p => renderStack(p))}
         </div>
       </div>

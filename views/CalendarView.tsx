@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { Event, Task, Language, KnowledgeBase } from '../types';
@@ -247,7 +246,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const totalItemsCount = filteredItems.events.length + filteredItems.tasks.length;
   
   return (
-    <div className="space-y-12 pb-32 md:pb-0 h-full relative">
+    <div className="space-y-8 md:space-y-12 h-auto md:h-full relative">
       <ItemDetailModal 
         item={selectedItem} 
         onClose={() => setSelectedItem(null)} 
@@ -388,7 +387,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       </header>
 
       <div className="grid lg:grid-cols-12 gap-12 items-start">
-        <div className="lg:col-span-7 bg-white p-10 rounded-[3rem] shadow-[0_10px_50px_rgba(0,0,0,0.03)] border border-charcoal/[0.03]">
+        <div className="lg:col-span-7 bg-white p-6 md:p-10 rounded-[3rem] shadow-[0_10px_50px_rgba(0,0,0,0.03)] border border-charcoal/[0.03]">
           <div className="grid grid-cols-7 text-center mb-10">
             {t.common.weekDays.map(d => (
               <div key={d} className="text-[10px] font-black text-charcoal/20 uppercase tracking-widest">{d}</div>
@@ -440,7 +439,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
             </span>
           </div>
 
-          <div className="space-y-6 flex-1 overflow-y-auto scrollbar-hide pr-2">
+          <div className="space-y-6 flex-1 overflow-y-auto scrollbar-hide pr-2 pb-24 lg:pb-2">
             {totalItemsCount > 0 ? (
               <>
                 {filteredItems.events.length > 0 && (

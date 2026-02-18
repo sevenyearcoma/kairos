@@ -11,7 +11,6 @@ export interface UserPreferences {
   assistantName: string;
   theme: 'light' | 'dark' | 'cream';
   onboardingComplete: boolean;
-  privacyPolicyAccepted?: boolean;
 }
 
 export interface KnowledgeBase {

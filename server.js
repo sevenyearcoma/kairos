@@ -26,7 +26,7 @@ app.use((req, res, next) => {
 // Serve static files from the current directory.
 app.use(express.static(__dirname));
 
-// Specific route for Privacy Policy
+// Serve Privacy Policy
 app.get('/privacy', (req, res) => {
   res.sendFile(path.join(__dirname, 'privacy.html'));
 });
