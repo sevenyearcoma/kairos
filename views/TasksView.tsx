@@ -1,15 +1,25 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Task, Event, Personality, Language, TaskPriority } from '../types';
+import { Task, Event, Personality, Language, TaskPriority, KnowledgeBase } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
 import { getT } from '../translations';
+
+// Extend Window interface for Web Speech API support
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
 
 interface TasksViewProps {
   tasks: Task[];
   events?: Event[];
   personality: Personality;
   language: Language;
+  knowledgeBase: KnowledgeBase;
+  onUpdateKnowledgeBase: (kb: KnowledgeBase) => void;
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
   onEditTask: (id: string, updates: Partial<Task>) => void;
@@ -25,7 +35,7 @@ interface TasksViewProps {
 }
 
 const TasksView: React.FC<TasksViewProps> = ({ 
-  tasks, events = [], language, onDeleteTask, onEditTask, onAddTask, onAddEvent,
+  tasks, events = [], language, knowledgeBase, onUpdateKnowledgeBase, onDeleteTask, onEditTask, onAddTask, onAddEvent,
   onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false
 }) => {
   const t = useMemo(() => getT(language), [language]);
@@ -41,6 +51,94 @@ const TasksView: React.FC<TasksViewProps> = ({
 
   const [selectedItem, setSelectedItem] = useState<Task | Event | null>(null); // For full edit modal
   const [startInEditMode, setStartInEditMode] = useState(false);
+
+  // Voice Input State
+  const [isListening, setIsListening] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recognitionRef = useRef<any>(null);
+  const baseInputRef = useRef(''); // Stores text present before recording started
+
+  // Clean up speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  // Timer for recording
+  useEffect(() => {
+    let interval: number;
+    if (isListening) {
+      interval = window.setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 120) { // 120 seconds limit
+            stopListening();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      setRecordingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice input is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === 'ru' ? 'ru-RU' : 'en-US';
+    recognition.interimResults = true; // Crucial for Russian
+    recognition.maxAlternatives = 1;
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setRecordingTime(0);
+      baseInputRef.current = newTaskTitle; // Capture existing text
+    };
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.onresult = (event: any) => {
+      let currentTranscript = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        currentTranscript += event.results[i][0].transcript;
+      }
+      
+      if (currentTranscript) {
+        const separator = baseInputRef.current && !baseInputRef.current.endsWith(' ') ? ' ' : '';
+        setNewTaskTitle(baseInputRef.current + separator + currentTranscript);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
   
   const priorities: TaskPriority[] = ['urgent', 'high', 'normal', 'low'];
 
@@ -61,8 +159,49 @@ const TasksView: React.FC<TasksViewProps> = ({
     return groups;
   }, [tasks]);
 
+  const updateKnowledgeBaseBackground = async (taskTitle: string, category: string, priority: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const memorySystemInstruction = `
+        Role: Kairos Memory Manager.
+        Task: Maintain a curated "User Knowledge Base" in JSON format.
+        
+        Current Knowledge Context:
+        ${JSON.stringify(knowledgeBase)}
+
+        User Action: Created task "${taskTitle}" (Category: ${category}, Priority: ${priority}).
+
+        RULES:
+        1. EXTRACT: Identify new facts about the user (e.g., job, tech stack, habits, goals).
+        2. MERGE: Combine related facts into a single point.
+           Example: "React Developer" + "Uses Next.js" -> "Frontend Stack: React, Next.js".
+        3. LIMIT: The knowledge base should contain approx 15 distinct high-level "knowledge points" (keys or array items).
+        4. EVICT: If the limit is reached, remove the least relevant or oldest fact to make room for new, more important info.
+        5. OUTPUT: Return the FULL updated JSON object. Structure it as a flat object or categorical object.
+      `;
+
+      const memoryResponse = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: "Update Context.",
+        config: {
+          systemInstruction: memorySystemInstruction,
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        }
+      });
+      
+      const updatedKb = JSON.parse(memoryResponse.text || "{}");
+      if (Object.keys(updatedKb).length > 0) {
+        onUpdateKnowledgeBase(updatedKb);
+      }
+    } catch (err) {
+      console.warn("Background Memory Update failed", err);
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isListening) stopListening();
     if (!newTaskTitle.trim() || isAnalyzing) return;
     
     setIsAnalyzing(true);
@@ -105,6 +244,10 @@ const TasksView: React.FC<TasksViewProps> = ({
       
       setNewTaskTitle('');
       setShowInput(false);
+
+      // Trigger background memory update
+      updateKnowledgeBaseBackground(newTaskTitle, result.category || newTaskCategory, result.priority || 'normal');
+
     } catch (err) {
       console.error("AI Categorization failed", err);
       onAddTask(newTaskTitle, newTaskCategory, '', undefined, 'none', 'normal');
@@ -154,6 +297,9 @@ const TasksView: React.FC<TasksViewProps> = ({
         
         Item: "${task.title}" (${task.category}, ${task.priority}). ${task.description || ''}
         
+        User Knowledge Base (Consider these facts):
+        ${JSON.stringify(knowledgeBase)}
+
         Rules:
         1. Timing: If "next week", schedule then. Else Today/Tomorrow.
         2. Hours: Work 09-18. Personal 09-21.
@@ -265,7 +411,7 @@ const TasksView: React.FC<TasksViewProps> = ({
           {items.length === 0 ? (
              <div className="h-full flex flex-col items-center justify-center opacity-20 gap-2 min-h-[120px]">
                 <span className="material-symbols-outlined text-4xl">folder_open</span>
-                <p className="text-[9px] font-black uppercase tracking-widest">Empty</p>
+                <p className="text-[9px] font-black uppercase tracking-widest">{t.tasks.noTasks}</p>
              </div>
           ) : (
              <div className="flex flex-col w-full pb-10 isolate space-y-[-16px]"> 
@@ -324,7 +470,7 @@ const TasksView: React.FC<TasksViewProps> = ({
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setStartInEditMode(false); setSelectedItem(task); }}
                                 className="size-9 rounded-lg flex items-center justify-center text-charcoal/30 hover:bg-charcoal/5 hover:text-charcoal transition-colors"
-                                title={language === 'ru' ? 'Подробнее' : 'View Details'}
+                                title={t.common.details}
                               >
                                 <span className="material-symbols-outlined text-lg">visibility</span>
                               </button>
@@ -332,7 +478,7 @@ const TasksView: React.FC<TasksViewProps> = ({
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setStartInEditMode(true); setSelectedItem(task); }}
                                 className="size-9 rounded-lg flex items-center justify-center text-charcoal/30 hover:bg-charcoal/5 hover:text-charcoal transition-colors"
-                                title={language === 'ru' ? 'Редактировать' : 'Edit'}
+                                title={t.common.edit}
                               >
                                 <span className="material-symbols-outlined text-lg">edit</span>
                               </button>
@@ -340,18 +486,18 @@ const TasksView: React.FC<TasksViewProps> = ({
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleAutoSchedule(task); }}
                                 className="h-9 px-3 rounded-lg bg-charcoal/5 hover:bg-primary hover:text-charcoal text-charcoal/60 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all"
-                                title={language === 'ru' ? 'Авто-планирование' : 'Auto Schedule'}
+                                title={t.tasks.autoSchedule.button}
                               >
                                 <span className={`material-symbols-outlined text-sm ${isProcessing ? 'animate-spin' : ''}`}>
                                   {isProcessing ? 'sync' : 'auto_awesome'}
                                 </span>
-                                {language === 'ru' ? 'В График' : 'Schedule'}
+                                {t.tasks.autoSchedule.button}
                               </button>
 
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
                                 className="size-9 rounded-lg flex items-center justify-center text-charcoal/30 hover:bg-red-50 hover:text-red-500 transition-colors"
-                                title={language === 'ru' ? 'Удалить' : 'Delete'}
+                                title={t.common.delete}
                               >
                                 <span className="material-symbols-outlined text-lg">delete</span>
                               </button>
@@ -385,7 +531,7 @@ const TasksView: React.FC<TasksViewProps> = ({
              {isGoogleConnected && lastSyncTime && (
                <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 border-l border-charcoal/5 pl-4">
                  <span className={`material-symbols-outlined text-[12px] ${isSyncing ? 'animate-spin' : ''}`}>{isSyncing ? 'sync' : 'done_all'}</span>
-                 {isSyncing ? (language === 'ru' ? 'Обновление...' : 'Syncing...') : `${language === 'ru' ? 'Обновлено' : 'Synced'} ${lastSyncTime}`}
+                 {isSyncing ? t.common.syncing : `${t.common.syncedAt} ${lastSyncTime}`}
                </p>
              )}
           </div>
@@ -405,7 +551,7 @@ const TasksView: React.FC<TasksViewProps> = ({
               <span className={`material-symbols-outlined text-[16px] ${isSyncing ? 'animate-spin' : ''}`}>
                 {isGoogleConnected ? 'sync' : 'cloud_off'}
               </span>
-              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC') : (language === 'ru' ? 'GOOGLE' : 'LINK')}
+              {isGoogleConnected ? t.common.syncNow : t.common.linkGoogle}
             </button>
           </div>
 
@@ -422,14 +568,53 @@ const TasksView: React.FC<TasksViewProps> = ({
       {showInput && (
         <form onSubmit={handleAdd} className="bg-white p-6 rounded-[2rem] border border-primary/20 shadow-xl shadow-primary/5 animate-in slide-in-from-top-4 duration-300 shrink-0 relative z-50">
            <div className="space-y-4">
-              <input 
-                autoFocus
-                className="w-full bg-transparent border-none focus:ring-0 text-xl font-bold placeholder:text-charcoal/10" 
-                placeholder={t.tasks.placeholder} 
-                value={newTaskTitle}
-                disabled={isAnalyzing}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-              />
+              <div className="relative">
+                {isListening && (
+                   <div className="absolute inset-0 rounded-xl bg-red-500/5 animate-pulse pointer-events-none"></div>
+                )}
+                <input 
+                  autoFocus
+                  className={`
+                    w-full bg-transparent border-none focus:ring-0 text-xl font-bold placeholder:text-charcoal/10 pr-20 transition-all 
+                    ${isListening ? 'text-red-600' : 'text-charcoal'}
+                  `}
+                  placeholder={isListening ? t.chat.listening : t.tasks.placeholder} 
+                  value={newTaskTitle}
+                  disabled={isAnalyzing}
+                  readOnly={isListening} // Prevent typing while recording
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                />
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={`
+                      size-10 flex items-center justify-center rounded-xl transition-all 
+                      ${isListening 
+                        ? 'bg-red-500 text-white shadow-lg scale-105' 
+                        : 'text-charcoal/20 hover:text-charcoal hover:bg-charcoal/5'
+                      }
+                    `}
+                    title={isListening ? "Stop Recording" : "Start Voice Input"}
+                  >
+                    {isListening ? (
+                       <div className="flex items-center gap-[2px]">
+                         <span className="w-0.5 h-2 bg-white rounded-full animate-bounce"></span>
+                         <span className="w-0.5 h-4 bg-white rounded-full animate-bounce [animation-delay:0.1s]"></span>
+                         <span className="w-0.5 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                       </div>
+                    ) : (
+                      <span className="material-symbols-outlined text-[20px]">mic</span>
+                    )}
+                  </button>
+                </div>
+                {isListening && (
+                    <div className="absolute -top-3 right-0 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-bottom-1">
+                       {formatTime(recordingTime)}
+                    </div>
+                )}
+              </div>
+              
               <div className="flex flex-wrap gap-2">
                 {t.tasks.categories.map(cat => (
                   <button 
@@ -446,13 +631,13 @@ const TasksView: React.FC<TasksViewProps> = ({
               </div>
               <button 
                 type="submit"
-                disabled={!newTaskTitle.trim() || isAnalyzing}
+                disabled={(!newTaskTitle.trim() || isAnalyzing) && !isListening}
                 className="w-full py-3 bg-primary text-charcoal font-bold uppercase tracking-[0.2em] text-[10px] rounded-xl disabled:opacity-30 transition-all flex justify-center items-center"
               >
                 {isAnalyzing ? (
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[14px] animate-spin">sync</span>
-                    {language === 'ru' ? 'АНАЛИЗ...' : 'ANALYZING...'}
+                    {t.tasks.analyzing}
                   </span>
                 ) : t.tasks.accept}
               </button>

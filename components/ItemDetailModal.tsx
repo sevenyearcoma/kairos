@@ -16,25 +16,15 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
 
-  const DAYS_OF_WEEK = useMemo(() => language === 'ru' 
-    ? [
-        { label: 'Пн', value: 1 },
-        { label: 'Вт', value: 2 },
-        { label: 'Ср', value: 3 },
-        { label: 'Чт', value: 4 },
-        { label: 'Пт', value: 5 },
-        { label: 'Сб', value: 6 },
-        { label: 'Вс', value: 0 },
-      ]
-    : [
-        { label: 'M', value: 1 },
-        { label: 'T', value: 2 },
-        { label: 'W', value: 3 },
-        { label: 'T', value: 4 },
-        { label: 'F', value: 5 },
-        { label: 'S', value: 6 },
-        { label: 'S', value: 0 },
-      ], [language]);
+  const DAYS_OF_WEEK = useMemo(() => t.common.weekDays.map((label, index) => {
+    // Correct mapping for JS getDay(): Sunday is 0, Monday is 1...
+    // But the labels in translation might be ordered differently if not careful. 
+    // Assuming standard Mon-Sun ordering in translation array for display.
+    // JS getDay(): 0=Sun, 1=Mon... 6=Sat.
+    // Trans array: 0=Mon, 1=Tue... 6=Sun
+    const value = index === 6 ? 0 : index + 1;
+    return { label, value };
+  }), [t]);
 
   useEffect(() => {
     if (item) {
@@ -80,12 +70,16 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   };
 
   const getRecurrenceLabel = () => {
-    if (!formData.recurrence || formData.recurrence === 'none') return language === 'ru' ? 'Никогда' : 'None';
+    if (!formData.recurrence || formData.recurrence === 'none') return t.recurrence.none;
     if (formData.recurrence === 'specific_days') {
-      const days = DAYS_OF_WEEK.filter(d => formData.daysOfWeek?.includes(d.value)).map(d => d.label).join(', ');
-      return language === 'ru' ? `Еженедельно: ${days || 'Дни не выбраны'}` : `Weekly on: ${days || 'No days selected'}`;
+      // Find labels for selected days
+      const selectedLabels = (formData.daysOfWeek || [])
+        .map((d: number) => DAYS_OF_WEEK.find(day => day.value === d)?.label)
+        .filter(Boolean)
+        .join(', ');
+      return t.recurrence.weeklyLabel(selectedLabels);
     }
-    return formData.recurrence.charAt(0).toUpperCase() + formData.recurrence.slice(1);
+    return t.recurrence[formData.recurrence as keyof typeof t.recurrence] || formData.recurrence;
   };
 
   return (
@@ -102,7 +96,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 {isGoogleSynced && (
                   <span className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest">
                     <span className="material-symbols-outlined text-[10px]">cloud_done</span>
-                    {language === 'ru' ? 'СИНХРОНИЗИРОВАНО' : 'SYNCED'}
+                    {t.modal.synced}
                   </span>
                 )}
               </div>
@@ -178,12 +172,12 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                     value={formData.recurrence || 'none'}
                     onChange={(e) => setFormData({ ...formData, recurrence: e.target.value })}
                   >
-                    <option value="none">{language === 'ru' ? 'Разово' : 'One-time'}</option>
-                    <option value="daily">{language === 'ru' ? 'Каждый день' : 'Every Day'}</option>
-                    <option value="weekdays">{language === 'ru' ? 'Будни (Пн-Пт)' : 'Weekdays (M-F)'}</option>
-                    <option value="weekly">{language === 'ru' ? 'Еженедельно' : 'Weekly (Same Day)'}</option>
-                    <option value="specific_days">{language === 'ru' ? 'Выбранные дни' : 'Specific Days of Week'}</option>
-                    <option value="monthly">{language === 'ru' ? 'Ежемесячно' : 'Monthly (Same Date)'}</option>
+                    <option value="none">{t.recurrence.none}</option>
+                    <option value="daily">{t.recurrence.daily}</option>
+                    <option value="weekdays">{t.recurrence.weekdays}</option>
+                    <option value="weekly">{t.recurrence.weekly}</option>
+                    <option value="specific_days">{t.recurrence.specific_days}</option>
+                    <option value="monthly">{t.recurrence.monthly}</option>
                   </select>
                 ) : (
                   <div className="flex items-center gap-1.5">
@@ -235,7 +229,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 className="w-full bg-beige-soft border-none rounded-2xl p-5 text-sm text-charcoal focus:ring-2 focus:ring-primary min-h-[100px]"
                 value={formData.description || ''}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder={language === 'ru' ? "Вставьте ссылки или детали..." : "Paste links or extra details here..."}
+                placeholder={t.modal.notesPlaceholder}
               />
             ) : (
               <div className="bg-beige-soft p-5 rounded-2xl text-sm text-charcoal/70 leading-relaxed whitespace-pre-wrap">
@@ -248,7 +242,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
         <div className="p-8 bg-beige-soft/50 border-t border-charcoal/5 flex gap-4">
           {isEditing ? (
             <>
-              <button onClick={() => setIsEditing(false)} className="flex-1 py-4 border border-charcoal/10 text-charcoal rounded-2xl font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white transition-all">{language === 'ru' ? 'Отмена' : 'Cancel'}</button>
+              <button onClick={() => setIsEditing(false)} className="flex-1 py-4 border border-charcoal/10 text-charcoal rounded-2xl font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white transition-all">{t.common.cancel}</button>
               <button onClick={handleSave} className="flex-1 py-4 bg-primary text-charcoal rounded-2xl font-bold uppercase tracking-[0.2em] text-[10px] shadow-lg hover:brightness-110 active:scale-95 transition-all">{t.modal.update}</button>
             </>
           ) : (

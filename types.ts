@@ -13,6 +13,22 @@ export interface UserPreferences {
   onboardingComplete: boolean;
 }
 
+export interface KnowledgeBase {
+  user_name: string;
+  background?: string;
+  aesthetics?: string;
+  core_stack?: string[];
+  current_projects?: string[];
+  interests?: string[];
+  preferences?: {
+    code_style?: string;
+    tone?: string;
+    scheduling?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
 export interface Event {
   id: string;
   title: string;

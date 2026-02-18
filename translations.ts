@@ -3,6 +3,22 @@ import { Language } from './types';
 
 export const translations = {
   en: {
+    common: {
+      syncing: 'Syncing...',
+      syncedAt: 'Last synced at',
+      syncNow: 'SYNC NOW',
+      linkGoogle: 'Link Google',
+      google: 'GOOGLE',
+      disconnect: 'Disconnect',
+      update: 'Update',
+      cancel: 'Cancel',
+      save: 'Save',
+      delete: 'Delete',
+      edit: 'Edit',
+      details: 'View Details',
+      weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      shortWeekDays: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+    },
     nav: {
       secretary: 'Secretary',
       calendar: 'Calendar',
@@ -14,12 +30,15 @@ export const translations = {
       placeholder: 'Tell me your plans...',
       thinking: 'Kairos is planning...',
       refining: 'Refining details...',
+      updatingMemory: 'Updating context...',
       listening: 'Listening...',
       initialMsg: (userName: string, assistantName: string) => `Hello, ${userName}! I'm your personal ${assistantName}. Ready to assist with your day.`,
       error: "I'm having trouble processing your request. Let's try again in a moment.",
       statusActive: 'Kairos is active',
       added: 'ADDED',
-      accept: 'ACCEPT'
+      accept: 'ACCEPT',
+      capacity: (events: number, tasks: number) => `Capacity: ${events} Events, ${tasks} Tasks Today`,
+      initializing: 'Initializing Secretary...'
     },
     settings: {
       title: 'Identity',
@@ -45,6 +64,7 @@ export const translations = {
       newTask: 'New Draft',
       cancel: 'Cancel',
       accept: 'Add to Board',
+      analyzing: 'ANALYZING...',
       today: 'Today',
       tomorrow: 'Tomorrow',
       abandoned: 'Abandoned Plans',
@@ -65,7 +85,7 @@ export const translations = {
       colDone: 'Done',
       moveTo: 'Move priority',
       autoSchedule: {
-        button: 'Auto Schedule',
+        button: 'Schedule',
         finding: 'Finding slot...',
         success: 'Scheduled',
         fail: 'No time found'
@@ -124,15 +144,42 @@ export const translations = {
       update: 'Update',
       notes: 'Notes & Links',
       noNotes: 'No notes.',
+      notesPlaceholder: 'Paste links or extra details here...',
       recurrence: 'Recurrence',
       startDate: 'Start Date',
       timeframe: 'Timeframe',
       category: 'Category',
       dayOfMonth: 'Day of Month',
-      chooseDays: 'Choose Days'
+      chooseDays: 'Choose Days',
+      synced: 'SYNCED'
+    },
+    recurrence: {
+      none: 'One-time',
+      daily: 'Every Day',
+      weekdays: 'Weekdays (M-F)',
+      weekly: 'Weekly (Same Day)',
+      specific_days: 'Specific Days of Week',
+      monthly: 'Monthly (Same Date)',
+      weeklyLabel: (days: string) => `Weekly on: ${days || 'No days selected'}`
     }
   },
   ru: {
+    common: {
+      syncing: 'Синхронизация...',
+      syncedAt: 'Обновлено',
+      syncNow: 'ОБНОВИТЬ',
+      linkGoogle: 'Привязать Google',
+      google: 'GOOGLE',
+      disconnect: 'Отключить',
+      update: 'Обновить',
+      cancel: 'Отмена',
+      save: 'Сохранить',
+      delete: 'Удалить',
+      edit: 'Редактировать',
+      details: 'Подробнее',
+      weekDays: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
+      shortWeekDays: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    },
     nav: {
       secretary: 'Секретарь',
       calendar: 'Календарь',
@@ -144,12 +191,15 @@ export const translations = {
       placeholder: 'Поделитесь планами...',
       thinking: 'Кайрос планирует...',
       refining: 'Уточняю детали...',
+      updatingMemory: 'Обновляю контекст...',
       listening: 'Слушаю...',
       initialMsg: (userName: string, assistantName: string) => `Привет, ${userName}! Я ваш личный ${assistantName}. Готов помочь с делами.`,
       error: "Извините, возникла ошибка при обработке запроса. Попробуйте еще раз.",
       statusActive: 'Кайрос активен',
       added: 'В СПИСКЕ',
-      accept: 'ПОДТВЕРДИТЬ'
+      accept: 'ПОДТВЕРДИТЬ',
+      capacity: (events: number, tasks: number) => `Загрузка: Событий — ${events}, Задач — ${tasks}`,
+      initializing: 'Запуск Секретаря...'
     },
     settings: {
       title: 'Личность',
@@ -175,6 +225,7 @@ export const translations = {
       newTask: 'Новая идея',
       cancel: 'Отмена',
       accept: 'Добавить',
+      analyzing: 'АНАЛИЗ...',
       today: 'Сегодня',
       tomorrow: 'Завтра',
       abandoned: 'Заброшено',
@@ -195,7 +246,7 @@ export const translations = {
       colDone: 'Готово',
       moveTo: 'Переместить...',
       autoSchedule: {
-        button: 'Авто-подбор',
+        button: 'В График',
         finding: 'Ищу время...',
         success: 'Запланировано',
         fail: 'Нет времени'
@@ -230,7 +281,7 @@ export const translations = {
           "Прекрасно справились, друг.",
           "Сегодня вы сияете.",
           "Еще одна победа для нас!",
-          "I знал, что у вас получится."
+          "Ты справляешься отлично."
         ],
         fail: "Ничего страшного. Давайте попробуем снова."
       }
@@ -254,12 +305,23 @@ export const translations = {
       update: 'Обновить',
       notes: 'Заметки',
       noNotes: 'Заметок нет.',
+      notesPlaceholder: 'Вставьте ссылки или детали...',
       recurrence: 'Повторение',
       startDate: 'Дата',
       timeframe: 'Время',
       category: 'Категория',
       dayOfMonth: 'День',
-      chooseDays: 'Дни недели'
+      chooseDays: 'Дни недели',
+      synced: 'СИНХРОНИЗИРОВАНО'
+    },
+    recurrence: {
+      none: 'Разово',
+      daily: 'Каждый день',
+      weekdays: 'Будни (Пн-Пт)',
+      weekly: 'Еженедельно',
+      specific_days: 'Выбранные дни',
+      monthly: 'Ежемесячно',
+      weeklyLabel: (days: string) => `Еженедельно: ${days || 'Дни не выбраны'}`
     }
   }
 };

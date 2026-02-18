@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority } from '../types';
+import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority, KnowledgeBase } from '../types';
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 
@@ -20,6 +20,7 @@ interface ChatViewProps {
   tasks: Task[];
   events: Event[];
   memory: MemoryItem[];
+  knowledgeBase: KnowledgeBase;
   language: Language;
   prefs: UserPreferences;
   isAiThinking: boolean;
@@ -33,12 +34,13 @@ interface ChatViewProps {
   onRescheduleTask: (taskId: string, newDate: string, isExternal: boolean) => void;
   onBulkReschedule: (taskIds: string[], eventIds: string[], newDate: string, isExternal: boolean) => void;
   onAddMemory: (item: MemoryItem) => void;
+  onUpdateKnowledgeBase: (kb: KnowledgeBase) => void;
   onSetSynced: (chatId: string, messageId: string) => void;
   onUpdatePrefs: (prefs: UserPreferences) => void;
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ 
-  activeChat, personality, tasks, events, memory, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onSetSynced, onUpdatePrefs
+  activeChat, personality, tasks, events, memory, knowledgeBase, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onUpdateKnowledgeBase, onSetSynced, onUpdatePrefs
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -46,9 +48,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   
   // Voice Input State
   const [isListening, setIsListening] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const recognitionRef = useRef<any>(null);
+  const baseInputRef = useRef(''); // Stores text present before recording started
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const t = useMemo(() => getT(language), [language]);
 
   const messages = (activeChat?.messages || []);
@@ -76,6 +81,14 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; 
   }, [messages, isAiThinking, agentStatus]);
 
+  // Auto-resize Textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [input]);
+
   // Clean up speech recognition on unmount
   useEffect(() => {
     return () => {
@@ -85,10 +98,41 @@ const ChatView: React.FC<ChatViewProps> = ({
     };
   }, []);
 
+  // Timer for recording
+  useEffect(() => {
+    let interval: number;
+    if (isListening) {
+      interval = window.setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 120) { // 120 seconds = 2 minutes limit
+            stopListening();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      setRecordingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
+  };
+
   const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopListening();
       return;
     }
 
@@ -100,23 +144,33 @@ const ChatView: React.FC<ChatViewProps> = ({
 
     const recognition = new SpeechRecognition();
     recognition.lang = language === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.interimResults = true;
+    recognition.interimResults = true; // Crucial for Russian
     recognition.maxAlternatives = 1;
+    recognition.continuous = true;
 
-    recognition.onstart = () => setIsListening(true);
+    recognition.onstart = () => {
+      setIsListening(true);
+      setRecordingTime(0);
+      baseInputRef.current = input; // Capture existing text
+    };
     
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false); 
+    };
     
     recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      const currentResultIndex = event.results.length - 1;
-      const transcript = event.results[currentResultIndex][0].transcript;
+      let currentTranscript = '';
       
-      if (event.results[currentResultIndex].isFinal) {
-        setInput(prev => {
-          const separator = prev.length > 0 && !prev.endsWith(' ') ? ' ' : '';
-          return prev + separator + transcript;
-        });
+      // Reconstruct transcript from all results (final + interim)
+      // This is vital for Russian where 'isFinal' is delayed
+      for (let i = 0; i < event.results.length; ++i) {
+        currentTranscript += event.results[i][0].transcript;
+      }
+
+      if (currentTranscript) {
+        // Append current session transcript to what was there before recording started
+        const separator = baseInputRef.current && !baseInputRef.current.endsWith(' ') ? ' ' : '';
+        setInput(baseInputRef.current + separator + currentTranscript);
       }
     };
 
@@ -125,6 +179,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const handleSend = async () => {
+    if (isListening) stopListening();
     if (!input.trim() || isAiThinking) return;
     
     const userText = input;
@@ -135,14 +190,65 @@ const ChatView: React.FC<ChatViewProps> = ({
     onUpdateMessages(activeChat.id, currentHistory);
     
     setInput('');
-    setIsAiThinking(true);
-    setAgentStatus(t.chat.thinking); // "Kairos is planning..."
+    // Reset height immediately
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
+    setIsAiThinking(true);
+    
+    // START AI PIPELINE
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const retrievedMemories = memory.slice(0, 15).map(m => m.text);
+      let currentKnowledge = knowledgeBase;
 
-      // --- Context Construction ---
+      // --- STEP 0: MEMORY MANAGER AGENT ---
+      setAgentStatus(t.chat.updatingMemory); // "Updating context..."
+      
+      const memorySystemInstruction = `
+        Role: Kairos Memory Manager.
+        Task: Maintain a curated "User Knowledge Base" in JSON format.
+        
+        Current Knowledge Context:
+        ${JSON.stringify(knowledgeBase)}
+
+        User Input: "${userText}"
+
+        RULES:
+        1. EXTRACT: Identify new facts about the user (e.g., job, tech stack, habits, goals, aesthetics).
+        2. MERGE: Combine related facts into a single point. 
+           Example: "React Developer" + "Uses Next.js" -> "Frontend Stack: React, Next.js".
+        3. LIMIT: The knowledge base should contain approx 15 distinct high-level "knowledge points" (keys or array items).
+        4. EVICT: If the limit is reached, remove the least relevant or oldest fact to make room for new, more important info.
+        5. OUTPUT: Return the FULL updated JSON object. Structure it as a flat object or categorical object.
+        
+        Focus on: user_name, background, current_projects, interests, preferences.
+      `;
+
+      const memoryResponse = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: "Update Context.",
+        config: {
+          systemInstruction: memorySystemInstruction,
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        }
+      });
+      
+      try {
+        const updatedKb = JSON.parse(memoryResponse.text || "{}");
+        if (Object.keys(updatedKb).length > 0) {
+          onUpdateKnowledgeBase(updatedKb);
+          currentKnowledge = updatedKb;
+          
+          // Sync name if changed
+          if (updatedKb.user_name && updatedKb.user_name !== prefs.userName) {
+            onUpdatePrefs({ ...prefs, userName: updatedKb.user_name });
+          }
+        }
+      } catch (err) {
+        console.warn("Memory Agent failed to parse JSON, using old context", err);
+      }
+
+      // --- CONTEXT CONSTRUCTION ---
       const now = new Date();
       const offset = now.getTimezoneOffset() * 60000;
       const currentTimeStr = new Date(now.getTime() - offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -152,11 +258,12 @@ const ChatView: React.FC<ChatViewProps> = ({
       const chatHistoryStr = currentHistory.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
       // --- STEP 1: ARCHITECT (Structural Logic) ---
-      // Focused solely on data extraction and scheduling logic.
+      setAgentStatus(t.chat.thinking); // "Kairos is planning..."
+
       const architectSystemInstruction = `
         You are the 'Architect' module of Kairos.
-        User: ${prefs.userName}. Date: ${todayStr} (${currentDayName}). Time: ${currentTimeStr}.
-        Memories: ${retrievedMemories.join('; ')}
+        User Context (Memory Agent Output): ${JSON.stringify(currentKnowledge)}
+        Date: ${todayStr} (${currentDayName}). Time: ${currentTimeStr}.
 
         Analyze the Request: "${userText}"
         History:
@@ -217,18 +324,18 @@ const ChatView: React.FC<ChatViewProps> = ({
       const architectPlan = JSON.parse(architectResponse.text || "{}");
 
       // --- STEP 2: EDITOR (Personality & Phrasing) ---
-      // Focused on kindness, tone, and final user response.
       setAgentStatus(t.chat.refining); // "Refining details..."
 
       const editorSystemInstruction = `
         You are Kairos, a kind, efficient, and responsible assistant.
-        Refine the Architect's plan into a warm, concise response to ${prefs.userName}.
+        Refine the Architect's plan into a warm, concise response to ${currentKnowledge.user_name || prefs.userName}.
         
+        User Knowledge: ${JSON.stringify(currentKnowledge)}
         Architect's Plan: ${JSON.stringify(architectPlan)}
         User Request: "${userText}"
         
         Language: ${language === 'ru' ? 'Russian' : 'English'}.
-        Tone: Professional yet warm. Be concise.
+        Tone: ${currentKnowledge.preferences?.tone || "Professional yet warm"}. Be concise.
         
         Output PLAIN TEXT response only.
       `;
@@ -322,6 +429,13 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const hasSpeechSupport = typeof window !== 'undefined' && (!!window.SpeechRecognition || !!window.webkitSpeechRecognition);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
   return (
     <div className="flex flex-col h-full gap-8 max-w-4xl mx-auto">
       {showSettings && (
@@ -345,7 +459,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       )}
 
       <div className="flex items-center justify-between px-6">
-         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">Capacity: {todayEventsCount} Events, {todayTasksCount} Tasks Today</h2>
+         <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">{t.chat.capacity(todayEventsCount, todayTasksCount)}</h2>
          <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
            <span className="material-symbols-outlined text-xl">settings</span>
          </button>
@@ -372,7 +486,7 @@ const ChatView: React.FC<ChatViewProps> = ({
                       <div className="flex gap-1">
                         {((msg.draftEvent?.recurrence && msg.draftEvent.recurrence !== 'none') || (msg.draftTask?.recurrence && msg.draftTask.recurrence !== 'none')) && (
                           <span className="text-[8px] font-black bg-primary/20 text-primary px-1.5 py-0.5 rounded-full uppercase">
-                            {(msg.draftEvent?.recurrence || msg.draftTask?.recurrence || '').replace('_', ' ')}
+                            {t.recurrence[(msg.draftEvent?.recurrence || msg.draftTask?.recurrence || 'none') as Exclude<keyof typeof t.recurrence, 'weeklyLabel'>]}
                           </span>
                         )}
                         {msg.draftTask?.priority && (
@@ -393,7 +507,7 @@ const ChatView: React.FC<ChatViewProps> = ({
                         <p className="text-[10px] text-charcoal/50 font-medium">
                           {msg.draftEvent.date} • {msg.draftEvent.startTime}
                           {msg.draftEvent.daysOfWeek && msg.draftEvent.daysOfWeek.length > 0 && 
-                            ` • ${msg.draftEvent.daysOfWeek.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}`
+                            ` • ${msg.draftEvent.daysOfWeek.map(d => t.common.shortWeekDays[d]).join(', ')}`
                           }
                         </p>
                       )}
@@ -425,32 +539,65 @@ const ChatView: React.FC<ChatViewProps> = ({
           )}
         </div>
         <div className="px-6 py-6 border-t border-charcoal/5 bg-white/60">
-          <div className="flex items-center gap-3">
+          <div className="flex items-end gap-3">
             <div className="relative flex-1">
-              <input 
-                className={`w-full bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 pl-6 pr-12 text-sm font-medium transition-all ${isListening ? 'ring-2 ring-primary/50' : ''}`}
+              {/* Active Voice Indicator Background */}
+              {isListening && (
+                <div className="absolute inset-0 rounded-2xl bg-red-500/10 animate-pulse pointer-events-none"></div>
+              )}
+              
+              <textarea 
+                ref={textareaRef}
+                className={`
+                  w-full bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 pl-6 pr-14 text-sm font-medium transition-all resize-none overflow-y-auto min-h-[56px] max-h-[200px] scrollbar-hide
+                  ${isListening ? 'ring-2 ring-red-500/20 border-red-500/30' : ''}
+                `}
                 placeholder={isListening ? t.chat.listening : t.chat.placeholder} 
                 value={input} 
-                disabled={isAiThinking}
+                readOnly={isAiThinking || isListening} // Prevent typing conflict while speaking
+                rows={1}
                 onChange={(e) => setInput(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={handleKeyDown}
               />
+              
               {hasSpeechSupport && (
-                <button
-                  onClick={toggleListening}
-                  className={`absolute right-3 top-1/2 -translate-y-1/2 size-8 flex items-center justify-center rounded-xl transition-all ${
-                    isListening 
-                      ? 'bg-red-50 text-red-500 animate-pulse' 
-                      : 'text-charcoal/20 hover:text-charcoal hover:bg-charcoal/5'
-                  }`}
-                  title="Voice Input"
-                >
-                  <span className="material-symbols-outlined text-[20px]">{isListening ? 'mic' : 'mic_none'}</span>
-                </button>
+                <div className="absolute right-2 bottom-2 flex items-center justify-center">
+                  <button
+                    onClick={toggleListening}
+                    className={`
+                      h-10 w-10 flex items-center justify-center rounded-xl transition-all duration-300
+                      ${isListening 
+                        ? 'bg-red-500 text-white shadow-lg scale-105' 
+                        : 'text-charcoal/20 hover:text-charcoal hover:bg-charcoal/5'
+                      }
+                    `}
+                    title={isListening ? "Stop Recording" : "Start Voice Input"}
+                  >
+                    {isListening ? (
+                       <div className="flex items-center justify-center gap-[2px]">
+                         <span className="w-1 h-3 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_infinite]"></span>
+                         <span className="w-1 h-5 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_0.1s_infinite]"></span>
+                         <span className="w-1 h-3 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_0.2s_infinite]"></span>
+                       </div>
+                    ) : (
+                      <span className="material-symbols-outlined text-[20px]">mic</span>
+                    )}
+                  </button>
+                  
+                  {isListening && (
+                    <div className="absolute -top-6 right-0 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-bottom-2">
+                       {formatTime(recordingTime)}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
-            <button onClick={handleSend} disabled={isAiThinking || !input.trim()} className="size-12 bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all group disabled:opacity-20 shrink-0">
+            <button 
+              onClick={handleSend} 
+              disabled={isAiThinking || !input.trim()} 
+              className="h-[56px] w-[56px] bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all group disabled:opacity-20 shrink-0"
+            >
               <span className="material-symbols-outlined">send</span>
             </button>
           </div>

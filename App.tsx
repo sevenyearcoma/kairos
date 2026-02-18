@@ -6,7 +6,7 @@ import CalendarView from './views/CalendarView';
 import TasksView from './views/TasksView';
 import FocusView from './views/FocusView';
 import BottomNav from './components/BottomNav';
-import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority } from './types';
+import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority, KnowledgeBase } from './types';
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
 
@@ -71,6 +71,22 @@ const App: React.FC = () => {
     };
   });
   
+  // New Knowledge Base Agent State
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase>(() => {
+    const saved = localStorage.getItem('kairos_knowledge_base');
+    if (saved) return JSON.parse(saved);
+    // Default initial state
+    return {
+      user_name: 'User',
+      core_stack: [],
+      current_projects: [],
+      interests: [],
+      preferences: {
+        tone: 'Direct, slightly witty'
+      }
+    };
+  });
+
   const [isGoogleConnected, setIsGoogleConnected] = useState(() => !!localStorage.getItem('kairos_google_token'));
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem('kairos_last_sync'));
   const [isSyncing, setIsSyncing] = useState(false);
@@ -83,6 +99,28 @@ const App: React.FC = () => {
 
   const location = useLocation();
   const tokenClient = useRef<any>(null);
+
+  // --- Dynamic Initial Message Update ---
+  // When language changes, if the active chat only has the "Welcome" message, update it.
+  useEffect(() => {
+    if (activeChat && activeChat.messages.length === 1 && activeChat.messages[0].role === 'assistant') {
+      const newInitialMsg = t.chat.initialMsg(prefs.userName, prefs.assistantName);
+      
+      // Check if it's different to avoid loops (though string comparison is cheap)
+      if (activeChat.messages[0].content !== newInitialMsg) {
+        setChats(prev => prev.map(c => {
+          if (c.id === activeChat.id) {
+            return {
+              ...c,
+              title: language === 'en' ? 'New Conversation' : 'Новый разговор',
+              messages: [{ ...c.messages[0], content: newInitialMsg }]
+            };
+          }
+          return c;
+        }));
+      }
+    }
+  }, [language, t, prefs.userName, prefs.assistantName, activeChatId]); // depend on language/t
 
   const syncGoogleData = useCallback(async (token: string) => {
     setIsSyncing(true);
@@ -185,6 +223,7 @@ const App: React.FC = () => {
   useEffect(() => localStorage.setItem('kairos_active_chat', activeChatId), [activeChatId]);
   useEffect(() => localStorage.setItem('kairos_memory_v2', JSON.stringify(memory)), [memory]);
   useEffect(() => localStorage.setItem('kairos_personality', JSON.stringify(personality)), [personality]);
+  useEffect(() => localStorage.setItem('kairos_knowledge_base', JSON.stringify(knowledgeBase)), [knowledgeBase]);
 
   const handleUpdateChatMessages = (chatId: string, messages: ChatMessage[], newTitle?: string) => {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, messages, title: newTitle || c.title } : c));
@@ -313,6 +352,7 @@ const App: React.FC = () => {
                   tasks={tasks}
                   events={events}
                   memory={memory}
+                  knowledgeBase={knowledgeBase}
                   language={language}
                   prefs={prefs}
                   isAiThinking={isAiThinking}
@@ -326,17 +366,37 @@ const App: React.FC = () => {
                   onRescheduleTask={() => {}}
                   onBulkReschedule={() => {}}
                   onAddMemory={handleAddMemoryItem}
+                  onUpdateKnowledgeBase={setKnowledgeBase}
                   onSetSynced={handleSetMessageSynced}
                   onUpdatePrefs={setPrefs}
-                /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">Initializing Secretary...</div>
+                /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">{t.chat.initializing}</div>
               } />
-              <Route path="/calendar" element={<CalendarView events={events} tasks={tasks} language={language} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} onAddEvent={handleAddEvent} onAddTask={handleAddTask} onEditEvent={() => {}} onSyncGoogle={handleSyncGoogle} onDisconnectGoogle={handleDisconnectGoogle} isGoogleConnected={isGoogleConnected} lastSyncTime={lastSyncTime} isSyncing={isSyncing} />} />
+              <Route path="/calendar" element={
+                <CalendarView 
+                  events={events} 
+                  tasks={tasks} 
+                  language={language} 
+                  knowledgeBase={knowledgeBase}
+                  onUpdateKnowledgeBase={setKnowledgeBase}
+                  onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} 
+                  onAddEvent={handleAddEvent} 
+                  onAddTask={handleAddTask} 
+                  onEditEvent={() => {}} 
+                  onSyncGoogle={handleSyncGoogle} 
+                  onDisconnectGoogle={handleDisconnectGoogle} 
+                  isGoogleConnected={isGoogleConnected} 
+                  lastSyncTime={lastSyncTime} 
+                  isSyncing={isSyncing} 
+                />
+              } />
               <Route path="/tasks" element={
                 <TasksView 
                   tasks={tasks} 
                   events={events} 
                   personality={personality} 
                   language={language} 
+                  knowledgeBase={knowledgeBase}
+                  onUpdateKnowledgeBase={setKnowledgeBase}
                   onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} 
                   onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} 
                   onAddTask={handleAddTask}

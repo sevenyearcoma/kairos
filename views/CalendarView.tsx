@@ -1,14 +1,25 @@
 
-import React, { useState, useMemo } from 'react';
-import { Event, Task, Language } from '../types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { GoogleGenAI } from '@google/genai';
+import { Event, Task, Language, KnowledgeBase } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
+
+// Extend Window interface for Web Speech API support
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
 
 interface CalendarViewProps {
   events: Event[];
   tasks: Task[];
   language: Language;
+  knowledgeBase: KnowledgeBase;
+  onUpdateKnowledgeBase: (kb: KnowledgeBase) => void;
   onDeleteEvent: (id: string) => void;
   onAddEvent: (event: Partial<Event>) => void;
   onAddTask: (title: string, category: string, date: string) => void;
@@ -21,7 +32,7 @@ interface CalendarViewProps {
 }
 
 const CalendarView: React.FC<CalendarViewProps> = ({ 
-  events, tasks, language, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false 
+  events, tasks, language, knowledgeBase, onUpdateKnowledgeBase, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false 
 }) => {
   const t = useMemo(() => getT(language), [language]);
   const [viewDate, setViewDate] = useState(new Date()); 
@@ -31,6 +42,94 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   
   const [quickAddType, setQuickAddType] = useState<'event' | 'task'>('event');
   const [quickAddTitle, setQuickAddTitle] = useState('');
+
+  // Voice Input State
+  const [isListening, setIsListening] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recognitionRef = useRef<any>(null);
+  const baseInputRef = useRef(''); // Stores text present before recording started
+
+  // Clean up speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  // Timer for recording
+  useEffect(() => {
+    let interval: number;
+    if (isListening) {
+      interval = window.setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 120) { // 120 seconds limit
+            stopListening();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      setRecordingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice input is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === 'ru' ? 'ru-RU' : 'en-US';
+    recognition.interimResults = true; // Crucial for Russian feedback
+    recognition.maxAlternatives = 1;
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setRecordingTime(0);
+      baseInputRef.current = quickAddTitle; // Capture existing text
+    };
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.onresult = (event: any) => {
+      let currentTranscript = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        currentTranscript += event.results[i][0].transcript;
+      }
+      
+      if (currentTranscript) {
+        const separator = baseInputRef.current && !baseInputRef.current.endsWith(' ') ? ' ' : '';
+        setQuickAddTitle(baseInputRef.current + separator + currentTranscript);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
 
   const currentMonthIdx = viewDate.getMonth();
   const currentYear = viewDate.getFullYear();
@@ -55,8 +154,49 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     return { events: dayEvents, tasks: dayTasks };
   }, [events, tasks, selectedDateStr]);
 
+  const updateKnowledgeBaseBackground = async (itemTitle: string, itemType: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const memorySystemInstruction = `
+        Role: Kairos Memory Manager.
+        Task: Maintain a curated "User Knowledge Base" in JSON format.
+        
+        Current Knowledge Context:
+        ${JSON.stringify(knowledgeBase)}
+
+        User Action: Created ${itemType} "${itemTitle}".
+
+        RULES:
+        1. EXTRACT: Identify new facts about the user (e.g., job, tech stack, habits, goals).
+        2. MERGE: Combine related facts into a single point.
+           Example: "React Developer" + "Uses Next.js" -> "Frontend Stack: React, Next.js".
+        3. LIMIT: The knowledge base should contain approx 15 distinct high-level "knowledge points" (keys or array items).
+        4. EVICT: If the limit is reached, remove the least relevant or oldest fact to make room for new, more important info.
+        5. OUTPUT: Return the FULL updated JSON object. Structure it as a flat object or categorical object.
+      `;
+
+      const memoryResponse = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: "Update Context.",
+        config: {
+          systemInstruction: memorySystemInstruction,
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        }
+      });
+      
+      const updatedKb = JSON.parse(memoryResponse.text || "{}");
+      if (Object.keys(updatedKb).length > 0) {
+        onUpdateKnowledgeBase(updatedKb);
+      }
+    } catch (err) {
+      console.warn("Background Memory Update failed", err);
+    }
+  };
+
   const handleQuickAddSubmit = () => {
     if (!quickAddTitle.trim()) return;
+    if (isListening) stopListening();
     
     if (quickAddType === 'event') {
       onAddEvent({
@@ -67,8 +207,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({
         type: 'work',
         location: 'Office'
       });
+      updateKnowledgeBaseBackground(quickAddTitle, 'Event');
     } else {
       onAddTask(quickAddTitle, 'Personal', selectedDateStr);
+      updateKnowledgeBaseBackground(quickAddTitle, 'Task');
     }
     
     setQuickAddTitle('');
@@ -90,11 +232,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const totalItemsCount = filteredItems.events.length + filteredItems.tasks.length;
-
-  const weekDays = language === 'ru' 
-    ? ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
+  
   return (
     <div className="space-y-12 pb-32 md:pb-0 h-full relative">
       <ItemDetailModal 
@@ -123,14 +261,52 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                 {t.calendar.task}
               </button>
             </div>
-            <input 
-              autoFocus
-              className="w-full bg-beige-soft border-none rounded-xl py-4 px-6 text-sm font-bold placeholder:text-charcoal/10 focus:ring-2 focus:ring-primary mb-6" 
-              placeholder={quickAddType === 'event' ? t.calendar.eventTitle : t.calendar.taskDesc}
-              value={quickAddTitle}
-              onChange={(e) => setQuickAddTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleQuickAddSubmit()}
-            />
+            <div className="relative mb-6">
+              {isListening && (
+                <div className="absolute inset-0 rounded-xl bg-red-500/5 animate-pulse pointer-events-none"></div>
+              )}
+              <input 
+                autoFocus
+                className={`
+                   w-full bg-beige-soft border-none rounded-xl py-4 pl-6 pr-20 text-sm font-bold placeholder:text-charcoal/10 focus:ring-2 focus:ring-primary transition-all 
+                   ${isListening ? 'text-red-600 ring-2 ring-red-500/20' : ''}
+                `}
+                placeholder={isListening ? t.chat.listening : (quickAddType === 'event' ? t.calendar.eventTitle : t.calendar.taskDesc)}
+                value={quickAddTitle}
+                readOnly={isListening} // Prevent typing while recording
+                onChange={(e) => setQuickAddTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleQuickAddSubmit()}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`
+                    size-10 flex items-center justify-center rounded-xl transition-all 
+                    ${isListening 
+                      ? 'bg-red-500 text-white shadow-lg scale-105' 
+                      : 'text-charcoal/20 hover:text-charcoal hover:bg-charcoal/5'
+                    }
+                  `}
+                  title={isListening ? "Stop Recording" : "Start Voice Input"}
+                >
+                  {isListening ? (
+                       <div className="flex items-center gap-[2px]">
+                         <span className="w-0.5 h-2 bg-white rounded-full animate-bounce"></span>
+                         <span className="w-0.5 h-4 bg-white rounded-full animate-bounce [animation-delay:0.1s]"></span>
+                         <span className="w-0.5 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                       </div>
+                  ) : (
+                    <span className="material-symbols-outlined text-[20px]">mic</span>
+                  )}
+                </button>
+              </div>
+              {isListening && (
+                 <div className="absolute -top-3 right-0 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-bottom-1">
+                    {formatTime(recordingTime)}
+                 </div>
+              )}
+            </div>
             <button 
               onClick={handleQuickAddSubmit}
               disabled={!quickAddTitle.trim()}
@@ -158,7 +334,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           {isGoogleConnected && lastSyncTime && (
             <p className="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5 ml-1">
               <span className={`material-symbols-outlined text-[12px] ${isSyncing ? 'animate-spin' : ''}`}>{isSyncing ? 'sync' : 'done_all'}</span>
-              {isSyncing ? (language === 'ru' ? 'Синхронизация...' : 'Syncing...') : `${language === 'ru' ? 'Синхронизировано в' : 'Last synced at'} ${lastSyncTime}`}
+              {isSyncing ? t.common.syncing : `${t.common.syncedAt} ${lastSyncTime}`}
             </p>
           )}
         </div>
@@ -176,12 +352,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({
               <span className={`material-symbols-outlined text-[18px] ${isSyncing ? 'animate-spin' : ''}`}>
                 {isGoogleConnected ? 'sync' : 'cloud_off'}
               </span>
-              {isGoogleConnected ? (language === 'ru' ? 'ОБНОВИТЬ' : 'SYNC NOW') : t.calendar.linkGoogle}
+              {isGoogleConnected ? t.common.syncNow : t.calendar.linkGoogle}
             </button>
             {isGoogleConnected && (
               <button 
                 onClick={onDisconnectGoogle}
-                title={language === 'ru' ? 'Отключить Google' : 'Disconnect Google'}
+                title={t.common.disconnect}
                 className="size-10 flex items-center justify-center text-charcoal/20 hover:text-red-500 transition-colors"
               >
                 <span className="material-symbols-outlined text-[18px]">logout</span>
@@ -200,7 +376,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       <div className="grid lg:grid-cols-12 gap-12 items-start">
         <div className="lg:col-span-7 bg-white p-10 rounded-[3rem] shadow-[0_10px_50px_rgba(0,0,0,0.03)] border border-charcoal/[0.03]">
           <div className="grid grid-cols-7 text-center mb-10">
-            {weekDays.map(d => (
+            {t.common.weekDays.map(d => (
               <div key={d} className="text-[10px] font-black text-charcoal/20 uppercase tracking-widest">{d}</div>
             ))}
           </div>
@@ -276,7 +452,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                               {event.source === 'google' && (
                                 <div className="flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
                                   <span className="material-symbols-outlined text-[11px]">cloud</span>
-                                  <span className="text-[8px] font-black uppercase tracking-tighter">GOOGLE</span>
+                                  <span className="text-[8px] font-black uppercase tracking-tighter">{t.common.google}</span>
                                 </div>
                               )}
                             </div>
@@ -302,7 +478,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="text-base font-bold text-charcoal truncate mb-1">{task.title}</h4>
-                          <span className="text-[10px] font-black uppercase text-charcoal/20 tracking-[0.2em]">{task.category} {task.source === 'google' ? '• GOOGLE' : ''}</span>
+                          <span className="text-[10px] font-black uppercase text-charcoal/20 tracking-[0.2em]">{task.category} {task.source === 'google' ? `• ${t.common.google}` : ''}</span>
                         </div>
                         <span className="material-symbols-outlined text-charcoal/10 group-hover:text-charcoal/30 transition-colors">chevron_right</span>
                       </div>
