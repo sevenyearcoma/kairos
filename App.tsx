@@ -299,6 +299,10 @@ const App: React.FC = () => {
     setEvents(prev => [...prev, newEvent]);
   };
 
+  const handleEditEvent = (id: string, updates: Partial<Event>) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
+
   const handleAddTask = async (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) => {
     const newTask: Task = { 
       id: Date.now().toString(), 
@@ -410,7 +414,8 @@ const App: React.FC = () => {
                   onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} 
                   onAddEvent={handleAddEvent} 
                   onAddTask={handleAddTask} 
-                  onEditEvent={() => {}} 
+                  onEditEvent={handleEditEvent} 
+                  onEditTask={handleEditTask}
                   onSyncGoogle={handleSyncGoogle} 
                   onDisconnectGoogle={handleDisconnectGoogle} 
                   isGoogleConnected={isGoogleConnected} 

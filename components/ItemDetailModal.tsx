@@ -26,16 +26,23 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
     return { label, value };
   }), [t]);
 
+  const TODAY = useMemo(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+  }, []);
+
   useEffect(() => {
     if (item) {
       setFormData({ 
         ...item, 
+        date: item.date || TODAY,
         daysOfWeek: item.daysOfWeek || [],
-        dayOfMonth: item.dayOfMonth || (item.date ? new Date(item.date).getDate() : 1)
+        dayOfMonth: item.dayOfMonth || (item.date ? new Date(item.date).getDate() : new Date().getDate())
       });
       setIsEditing(initialEditMode);
     }
-  }, [item, initialEditMode]);
+  }, [item, initialEditMode, TODAY]);
 
   if (!item) return null;
 

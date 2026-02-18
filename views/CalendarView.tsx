@@ -24,6 +24,7 @@ interface CalendarViewProps {
   onAddEvent: (event: Partial<Event>) => void;
   onAddTask: (title: string, category: string, date: string) => void;
   onEditEvent: (id: string, updates: any) => void;
+  onEditTask: (id: string, updates: any) => void;
   onSyncGoogle: () => void;
   onDisconnectGoogle: () => void;
   isGoogleConnected: boolean;
@@ -32,7 +33,7 @@ interface CalendarViewProps {
 }
 
 const CalendarView: React.FC<CalendarViewProps> = ({ 
-  events, tasks, language, knowledgeBase, onUpdateKnowledgeBase, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false 
+  events, tasks, language, knowledgeBase, onUpdateKnowledgeBase, onDeleteEvent, onAddEvent, onAddTask, onEditEvent, onEditTask, onSyncGoogle, onDisconnectGoogle, isGoogleConnected, lastSyncTime, isSyncing = false 
 }) => {
   const t = useMemo(() => getT(language), [language]);
   const [viewDate, setViewDate] = useState(new Date()); 
@@ -231,6 +232,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     setSelectedDateStr(`${currentYear}-${month}-${day}`);
   };
 
+  const handleEditItem = (id: string, updates: any) => {
+    // Optimistic update for the modal
+    setSelectedItem((prev: any) => prev ? { ...prev, ...updates } : null);
+
+    // Check if it's an event or task
+    if (events.some(e => e.id === id)) {
+      onEditEvent(id, updates);
+    } else {
+      onEditTask(id, updates);
+    }
+  };
+
   const totalItemsCount = filteredItems.events.length + filteredItems.tasks.length;
   
   return (
@@ -238,7 +251,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       <ItemDetailModal 
         item={selectedItem} 
         onClose={() => setSelectedItem(null)} 
-        onEdit={onEditEvent} 
+        onEdit={handleEditItem} 
         language={language}
       />
 
