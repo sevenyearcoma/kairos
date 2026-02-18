@@ -8,9 +8,10 @@ interface ItemDetailModalProps {
   onClose: () => void;
   onEdit?: (id: string, updates: any) => void;
   language: Language;
+  initialEditMode?: boolean;
 }
 
-const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit, language }) => {
+const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit, language, initialEditMode = false }) => {
   const t = useMemo(() => getT(language), [language]);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
@@ -42,9 +43,9 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
         daysOfWeek: item.daysOfWeek || [],
         dayOfMonth: item.dayOfMonth || (item.date ? new Date(item.date).getDate() : 1)
       });
-      setIsEditing(false);
+      setIsEditing(initialEditMode);
     }
-  }, [item]);
+  }, [item, initialEditMode]);
 
   if (!item) return null;
 

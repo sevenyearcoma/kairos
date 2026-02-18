@@ -14,6 +14,7 @@ export const translations = {
       placeholder: 'Tell me your plans...',
       thinking: 'Kairos is planning...',
       refining: 'Refining details...',
+      listening: 'Listening...',
       initialMsg: (userName: string, assistantName: string) => `Hello, ${userName}! I'm your personal ${assistantName}. Ready to assist with your day.`,
       error: "I'm having trouble processing your request. Let's try again in a moment.",
       statusActive: 'Kairos is active',
@@ -39,8 +40,8 @@ export const translations = {
       taskDesc: 'Task description?'
     },
     tasks: {
-      title: 'Idea Board',
-      activeFor: 'Unscheduled Drafts',
+      title: 'Matrix',
+      activeFor: 'Eisenhower Board',
       newTask: 'New Draft',
       cancel: 'Cancel',
       accept: 'Add to Board',
@@ -49,7 +50,7 @@ export const translations = {
       abandoned: 'Abandoned Plans',
       upcoming: 'Upcoming',
       completed: 'Completed',
-      noTasks: 'No drafts in this category',
+      noTasks: 'Empty Quadrant',
       placeholder: 'What needs to be done?',
       postpone: 'Move to Tomorrow',
       abandon: 'Abandoned',
@@ -62,11 +63,23 @@ export const translations = {
       colToday: 'Today',
       colTomorrow: 'Tomorrow',
       colDone: 'Done',
+      moveTo: 'Move priority',
+      autoSchedule: {
+        button: 'Auto Schedule',
+        finding: 'Finding slot...',
+        success: 'Scheduled',
+        fail: 'No time found'
+      },
+      menu: {
+        manual: 'Manual Schedule',
+        delete: 'Delete Draft',
+        move: 'Change Priority'
+      },
       priorities: {
-        urgent: 'Do Now',
-        high: 'High Priority',
-        normal: 'Medium Priority',
-        low: 'Low Priority / Later'
+        urgent: 'Do First (Urgent & Important)',
+        high: 'Schedule (Important & Not Urgent)',
+        normal: 'Delegate (Urgent & Not Important)',
+        low: 'Eliminate (Not Urgent & Not Important)'
       },
       promote: {
         button: 'Schedule',
@@ -123,7 +136,7 @@ export const translations = {
     nav: {
       secretary: 'Секретарь',
       calendar: 'Календарь',
-      tasks: 'Черновики',
+      tasks: 'Матрица',
       focus: 'Фокус',
       assistant: 'Личный помощник'
     },
@@ -131,6 +144,7 @@ export const translations = {
       placeholder: 'Поделитесь планами...',
       thinking: 'Кайрос планирует...',
       refining: 'Уточняю детали...',
+      listening: 'Слушаю...',
       initialMsg: (userName: string, assistantName: string) => `Привет, ${userName}! Я ваш личный ${assistantName}. Готов помочь с делами.`,
       error: "Извините, возникла ошибка при обработке запроса. Попробуйте еще раз.",
       statusActive: 'Кайрос активен',
@@ -156,8 +170,8 @@ export const translations = {
       taskDesc: 'Описание?'
     },
     tasks: {
-      title: 'Идеи',
-      activeFor: 'Нераспределенное',
+      title: 'Матрица',
+      activeFor: 'Эйзенхауэр',
       newTask: 'Новая идея',
       cancel: 'Отмена',
       accept: 'Добавить',
@@ -166,7 +180,7 @@ export const translations = {
       abandoned: 'Заброшено',
       upcoming: 'Предстоящие',
       completed: 'Завершено',
-      noTasks: 'Пусто',
+      noTasks: 'Квадрант пуст',
       placeholder: 'Что нужно сделать?',
       postpone: 'На завтра',
       abandon: 'Заброшено',
@@ -179,11 +193,23 @@ export const translations = {
       colToday: 'Сегодня',
       colTomorrow: 'Завтра',
       colDone: 'Готово',
+      moveTo: 'Переместить...',
+      autoSchedule: {
+        button: 'Авто-подбор',
+        finding: 'Ищу время...',
+        success: 'Запланировано',
+        fail: 'Нет времени'
+      },
+      menu: {
+        manual: 'Выбрать время',
+        delete: 'Удалить',
+        move: 'Сменить приоритет'
+      },
       priorities: {
-        urgent: 'Срочно',
-        high: 'Важно',
-        normal: 'Нормально',
-        low: 'Отложено'
+        urgent: 'Сделать (Важно и Срочно)',
+        high: 'Планировать (Важно, не Срочно)',
+        normal: 'Делегировать (Срочно, не Важно)',
+        low: 'Удалить (Не Важно, не Срочно)'
       },
       promote: {
         button: 'В календарь',
