@@ -163,6 +163,13 @@ export const translations = {
       specific_days: 'Specific Days of Week',
       monthly: 'Monthly (Same Date)',
       weeklyLabel: (days: string) => `Weekly on: ${days || 'No days selected'}`
+    },
+    privacy: {
+      title: "Welcome to Kairos",
+      description: "Kairos is designed to help you organize your life with kindness. To provide personalized assistance, we process your schedule and tasks locally and via secure AI services.",
+      agreement: "By continuing, you acknowledge that you have read and agree to our ",
+      policyLink: "Privacy Policy",
+      accept: "I Agree & Continue"
     }
   },
   ru: {
@@ -326,6 +333,13 @@ export const translations = {
       specific_days: 'Выбранные дни',
       monthly: 'Ежемесячно',
       weeklyLabel: (days: string) => `Еженедельно: ${days || 'Дни не выбраны'}`
+    },
+    privacy: {
+      title: "Добро пожаловать в Kairos",
+      description: "Kairos создан, чтобы помочь вам организовать жизнь с заботой. Для предоставления персонализированной помощи мы обрабатываем ваш график и задачи локально и через защищенные AI-сервисы.",
+      agreement: "Продолжая, вы подтверждаете, что ознакомились и согласны с нашей ",
+      policyLink: "Политикой конфиденциальности",
+      accept: "Принять и продолжить"
     }
   }
 };

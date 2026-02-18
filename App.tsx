@@ -6,6 +6,7 @@ import CalendarView from './views/CalendarView';
 import TasksView from './views/TasksView';
 import FocusView from './views/FocusView';
 import BottomNav from './components/BottomNav';
+import PrivacyConsentModal from './components/PrivacyConsentModal';
 import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority, KnowledgeBase } from './types';
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
@@ -39,11 +40,12 @@ const App: React.FC = () => {
         userName: 'User',
         assistantName: 'Kairos',
         theme: 'cream',
-        onboardingComplete: false
+        onboardingComplete: false,
+        privacyPolicyAccepted: false
       };
     } catch (e) {
       console.error("Error loading prefs", e);
-      return { userName: 'User', assistantName: 'Kairos', theme: 'cream', onboardingComplete: false };
+      return { userName: 'User', assistantName: 'Kairos', theme: 'cream', onboardingComplete: false, privacyPolicyAccepted: false };
     }
   });
 
@@ -330,10 +332,18 @@ const App: React.FC = () => {
     setActiveChatId(newId);
   };
 
+  const handleAcceptPrivacy = useCallback(() => {
+    setPrefs(prev => ({ ...prev, privacyPolicyAccepted: true }));
+  }, []);
+
   useEffect(() => { if (chats.length === 0) handleNewChat(); }, []);
 
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
+      {!prefs.privacyPolicyAccepted && (
+        <PrivacyConsentModal language={language} onAccept={handleAcceptPrivacy} />
+      )}
+
       <aside className="hidden md:flex flex-col w-72 border-r border-charcoal/5 bg-white/50 sticky top-0 h-screen p-8 shrink-0 overflow-y-auto scrollbar-hide">
         <div className="flex items-center gap-3 mb-12">
           <div className="size-10 bg-charcoal rounded-xl flex items-center justify-center text-primary shadow-2xl">
