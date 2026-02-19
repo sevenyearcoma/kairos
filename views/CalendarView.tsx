@@ -136,7 +136,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     });
   }, [weekDays, events, tasks]);
 
-  // Agenda / Schedule Data logic (replaces previous external fixed array)
   const scheduleData = useMemo(() => {
     const agenda: { dateStr: string; items: (Event | Task)[] }[] = [];
     const today = new Date();
@@ -151,7 +150,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
         ...tasks.filter(t => isItemOnDate(t, ds) && !t.completed)
       ];
       if (items.length) {
-        // Sort items by time for the day if they are events
         items.sort((a, b) => {
           const timeA = 'startTime' in a ? a.startTime : '00:00';
           const timeB = 'startTime' in b ? b.startTime : '00:00';
@@ -173,7 +171,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     if (!start || !end || start === 'All Day') return HOUR_HEIGHT;
     const startPos = calculatePosition(start);
     const endPos = calculatePosition(end);
-    return Math.max(endPos - startPos, 30); // Min height 30px
+    return Math.max(endPos - startPos, 30);
   };
 
   const timeIndicatorTop = useMemo(() => {
@@ -200,12 +198,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     setViewDate(prev => { const d = new Date(prev); d.setMonth(d.getMonth() + offset); return d; });
   }
 
+  const handleDeleteItem = (id: string) => {
+    if (selectedItem && 'startTime' in selectedItem) {
+      onDeleteEvent(id);
+    } else {
+      // Deleting a task from calendar detail view if needed (tasks aren't specifically handled for deletion in CalendarView props yet, let's keep it to events for now as per request)
+    }
+  };
+
   return (
     <div className="space-y-8 md:space-y-12 h-full flex flex-col relative pb-20 md:pb-4 overflow-hidden">
       <ItemDetailModal 
         item={selectedItem} 
         onClose={() => setSelectedItem(null)} 
-        onEdit={(id, updates) => { setSelectedItem(prev => prev ? { ...prev, ...updates } : null); onEditEvent(id, updates); }} 
+        onEdit={(id, updates) => { 
+          setSelectedItem(prev => prev ? { ...prev, ...updates } : null); 
+          if ('startTime' in (selectedItem as any)) onEditEvent(id, updates);
+          else onEditTask(id, updates);
+        }} 
+        onDelete={handleDeleteItem}
         language={language}
       />
 
@@ -270,7 +281,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       <div className="flex-1 overflow-hidden relative">
         {viewMode === 'week' ? (
           <div className="h-full flex flex-col bg-white/50 border border-charcoal/5 rounded-[2.5rem] shadow-sm overflow-hidden">
-            {/* Week Headers */}
             <div className="flex border-b border-charcoal/5 bg-white/80 backdrop-blur-md z-20 shrink-0">
               <div className="w-16 shrink-0 border-r border-charcoal/5"></div>
               {weekDays.map((day, i) => {
@@ -283,10 +293,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                 );
               })}
             </div>
-            {/* Week Grid Content */}
             <div className="flex-1 overflow-y-auto scrollbar-hide relative bg-white">
-              <div className="flex min-h-[1920px]"> {/* 24 hours * 80px */}
-                {/* Time Scale */}
+              <div className="flex min-h-[1920px]">
                 <div className="w-16 shrink-0 border-r border-charcoal/5 bg-beige-soft/30 sticky left-0 z-10">
                   {Array.from({ length: 24 }).map((_, h) => (
                     <div key={h} className="h-20 border-b border-charcoal/[0.03] px-2 py-1 flex justify-end">
@@ -294,9 +302,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     </div>
                   ))}
                 </div>
-                {/* Days Columns */}
                 <div className="flex-1 flex relative">
-                  {/* Current Time Indicator */}
                   {weekStart <= new Date() && new Date() < new Date(weekStart.getTime() + 7*24*60*60*1000) && (
                     <div className="absolute left-0 right-0 z-30 pointer-events-none flex items-center" style={{ top: timeIndicatorTop }}>
                       <div className="size-2 bg-red-500 rounded-full -ml-1"></div>
@@ -305,11 +311,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                   )}
                   {weekEvents.map((dayData, i) => (
                     <div key={i} className="flex-1 relative border-r border-charcoal/[0.03] last:border-r-0 h-full group">
-                      {/* Hour lines within columns */}
                       {Array.from({ length: 24 }).map((_, h) => (
                         <div key={h} className="h-20 border-b border-charcoal/[0.03]"></div>
                       ))}
-                      {/* Event Blocks */}
                       {dayData.events.map(event => (
                         <div 
                           key={event.id}
@@ -324,7 +328,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                           <p className="line-clamp-2 leading-tight tracking-tight">{event.title}</p>
                         </div>
                       ))}
-                      {/* Tasks as small dots or thin strips if no time */}
                       {dayData.tasks.map(task => (
                         <div 
                           key={task.id}

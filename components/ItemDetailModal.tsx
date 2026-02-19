@@ -7,19 +7,18 @@ interface ItemDetailModalProps {
   item: Event | Task | null;
   onClose: () => void;
   onEdit?: (id: string, updates: any) => void;
+  onDelete?: (id: string) => void;
   language: Language;
   initialEditMode?: boolean;
 }
 
-const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit, language, initialEditMode = false }) => {
+const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit, onDelete, language, initialEditMode = false }) => {
   const t = useMemo(() => getT(language), [language]);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
 
   const DAYS_OF_WEEK = useMemo(() => t.common.weekDays.map((label, index) => {
     // Correct mapping for JS getDay(): Sunday is 0, Monday is 1...
-    // JS getDay(): 0=Sun, 1=Mon... 6=Sat.
-    // Trans array: 0=Mon, 1=Tue... 6=Sun
     const value = index === 6 ? 0 : index + 1;
     return { label, value };
   }), [t]);
@@ -54,6 +53,13 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
     setIsEditing(false);
   };
 
+  const handleDelete = () => {
+    if (onDelete && window.confirm(t.common.delete + '?')) {
+      onDelete(item.id);
+      onClose();
+    }
+  };
+
   const toggleDay = (dayValue: number) => {
     const current = formData.daysOfWeek || [];
     if (current.includes(dayValue)) {
@@ -77,7 +83,6 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   const getRecurrenceLabel = () => {
     if (!formData.recurrence || formData.recurrence === 'none') return t.recurrence.none;
     if (formData.recurrence === 'specific_days') {
-      // Find labels for selected days, sorted in Mon-Sun order
       const selectedLabels = [...(formData.daysOfWeek || [])]
         .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
         .map((d: number) => DAYS_OF_WEEK.find(day => day.value === d)?.label)
@@ -117,6 +122,11 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
               )}
             </div>
             <div className="flex gap-2">
+              {!isEditing && onDelete && (
+                <button onClick={handleDelete} title={t.common.delete} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-100 transition-colors">
+                  <span className="material-symbols-outlined">delete</span>
+                </button>
+              )}
               {!isEditing && onEdit && (
                 <button onClick={() => setIsEditing(true)} className="p-2 bg-charcoal/5 rounded-full hover:bg-charcoal/10 transition-colors">
                   <span className="material-symbols-outlined text-charcoal/40">edit</span>

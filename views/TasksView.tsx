@@ -218,7 +218,20 @@ const TasksView: React.FC<TasksViewProps> = ({
 
   return (
     <div className="space-y-6 px-4 md:px-0 relative h-full flex flex-col">
-      <ItemDetailModal item={selectedItem} onClose={()=>{setSelectedItem(null);setStartInEditMode(false);}} onEdit={onEditTask} language={language} initialEditMode={startInEditMode} />
+      <ItemDetailModal 
+        item={selectedItem} 
+        onClose={()=>{setSelectedItem(null);setStartInEditMode(false);}} 
+        onEdit={(id, updates) => {
+          if (selectedItem && 'startTime' in selectedItem) {
+            // Edit event if needed
+          } else {
+            onEditTask(id, updates);
+          }
+        }} 
+        onDelete={onDeleteTask}
+        language={language} 
+        initialEditMode={startInEditMode} 
+      />
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 h-auto md:h-20 shrink-0">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-charcoal">{t.tasks.title}</h1>
