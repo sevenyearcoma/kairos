@@ -15,7 +15,28 @@ declare const google: any;
 const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com";
 const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks";
 
+// Versioning for storage to handle breaking changes/resets
+const CURRENT_STORAGE_VERSION = 'v1.1_reset';
+
 const App: React.FC = () => {
+  // --- Storage Migration/Clear Logic ---
+  // This effect runs once on mount to clear old potentially buggy storage
+  useEffect(() => {
+    const lastClearedVersion = localStorage.getItem('kairos_cleared_version');
+    if (lastClearedVersion !== CURRENT_STORAGE_VERSION) {
+      const keysToKeep = ['process.env.API_KEY']; // Generally we don't store API key in localstorage ourselves but being safe
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('kairos_') && !keysToKeep.includes(key)) {
+          localStorage.removeItem(key);
+        }
+      });
+      localStorage.setItem('kairos_cleared_version', CURRENT_STORAGE_VERSION);
+      // Reload the page to ensure all states are re-initialized from scratch
+      window.location.reload();
+    }
+  }, []);
+
   // Use local date instead of UTC to ensure "Today" is accurate to the user's timezone
   const TODAY = useMemo(() => {
     const d = new Date();
@@ -239,7 +260,7 @@ const App: React.FC = () => {
     } finally {
       setIsSyncing(false);
     }
-  }, [TODAY]);
+  }, []);
 
   useEffect(() => {
     const initGis = () => {
@@ -268,7 +289,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const token = localStorage.getItem('kairos_google_token');
     if (token && !isSyncing) syncGoogleData(token);
-  }, []);
+  }, [syncGoogleData]);
 
   useEffect(() => localStorage.setItem('kairos_lang', language), [language]);
   useEffect(() => localStorage.setItem('kairos_prefs', JSON.stringify(prefs)), [prefs]);
@@ -524,6 +545,7 @@ const App: React.FC = () => {
     }
   };
 
+  // Fixed handleEditTask: used 't' instead of undefined 'e'
   const handleEditTask = (id: string, updates: Partial<Task>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
   };
