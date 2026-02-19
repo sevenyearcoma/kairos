@@ -179,11 +179,24 @@ const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const handleClearChat = () => {
-    if (messages.length <= 1) return;
+    if (messages.length <= 1 || isAiThinking) return;
+    
     if (window.confirm(t.chat.clearConfirm)) {
-      // Keep only the first message (the welcome message)
-      const firstMsg = messages[0];
-      onUpdateMessages(activeChat.id, [firstMsg]);
+      const initialMsgContent = t.chat.initialMsg(prefs.userName, prefs.assistantName);
+      const resetMessages: ChatMessage[] = [{
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: initialMsgContent
+      }];
+      
+      const resetTitle = language === 'en' ? 'New Conversation' : 'Новый разговор';
+      
+      onUpdateMessages(activeChat.id, resetMessages, resetTitle);
+      
+      // Reset local UI states
+      setInput('');
+      setAgentStatus('');
+      setIsAiThinking(false);
     }
   };
 
@@ -476,7 +489,7 @@ const ChatView: React.FC<ChatViewProps> = ({
          <div className="flex gap-2">
             <button 
               onClick={handleClearChat}
-              disabled={messages.length <= 1}
+              disabled={messages.length <= 1 || isAiThinking}
               className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30 disabled:hover:text-charcoal/40 disabled:hover:bg-white"
               title={t.chat.clearChat}
             >
@@ -530,7 +543,10 @@ const ChatView: React.FC<ChatViewProps> = ({
                         <p className="text-[10px] text-charcoal/50 font-medium">
                           {msg.draftEvent.date} • {msg.draftEvent.startTime}
                           {msg.draftEvent.daysOfWeek && msg.draftEvent.daysOfWeek.length > 0 && 
-                            ` • ${msg.draftEvent.daysOfWeek.map(d => t.common.shortWeekDays[d === 0 ? 6 : d - 1]).join(', ')}`
+                            ` • ${[...msg.draftEvent.daysOfWeek]
+                              .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
+                              .map(d => t.common.shortWeekDays[(d + 6) % 7])
+                              .join(', ')}`
                           }
                         </p>
                       )}

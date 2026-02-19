@@ -18,8 +18,6 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
 
   const DAYS_OF_WEEK = useMemo(() => t.common.weekDays.map((label, index) => {
     // Correct mapping for JS getDay(): Sunday is 0, Monday is 1...
-    // But the labels in translation might be ordered differently if not careful. 
-    // Assuming standard Mon-Sun ordering in translation array for display.
     // JS getDay(): 0=Sun, 1=Mon... 6=Sat.
     // Trans array: 0=Mon, 1=Tue... 6=Sun
     const value = index === 6 ? 0 : index + 1;
@@ -79,8 +77,9 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   const getRecurrenceLabel = () => {
     if (!formData.recurrence || formData.recurrence === 'none') return t.recurrence.none;
     if (formData.recurrence === 'specific_days') {
-      // Find labels for selected days
-      const selectedLabels = (formData.daysOfWeek || [])
+      // Find labels for selected days, sorted in Mon-Sun order
+      const selectedLabels = [...(formData.daysOfWeek || [])]
+        .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
         .map((d: number) => DAYS_OF_WEEK.find(day => day.value === d)?.label)
         .filter(Boolean)
         .join(', ');
