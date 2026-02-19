@@ -58,7 +58,11 @@ export const translations = {
       event: 'Event',
       task: 'Task',
       eventTitle: 'Event title?',
-      taskDesc: 'Task description?'
+      taskDesc: 'Task description?',
+      viewMonth: 'Month',
+      viewSchedule: 'Agenda',
+      viewWeek: 'Week',
+      upcoming: 'Upcoming'
     },
     tasks: {
       title: 'Matrix',
@@ -221,7 +225,11 @@ export const translations = {
       event: 'Событие',
       task: 'Задача',
       eventTitle: 'Название?',
-      taskDesc: 'Описание?'
+      taskDesc: 'Описание?',
+      viewMonth: 'Месяц',
+      viewSchedule: 'Повестка',
+      viewWeek: 'Неделя',
+      upcoming: 'Предстоящее'
     },
     tasks: {
       title: 'Матрица',

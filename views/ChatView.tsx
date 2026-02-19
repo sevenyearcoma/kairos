@@ -297,6 +297,12 @@ const ChatView: React.FC<ChatViewProps> = ({
         3. Determine 'kairosInsight' (warning/tip) if needed.
         4. Draft 'details' for events/tasks. Title must be <6 words.
         
+        CRITICAL TIME RULES:
+        - 'endTime' MUST ALWAYS be chronologically after 'startTime'.
+        - If the user provides a time range like "10 to 11", startTime is 10:00, endTime is 11:00.
+        - If the user provides only one time like "at 6pm", default 'endTime' to 1 hour later (19:00).
+        - NEVER generate an 'endTime' that is earlier than or equal to 'startTime' on the same day.
+        
         Output JSON ONLY.
       `;
 
