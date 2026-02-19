@@ -530,7 +530,7 @@ const ChatView: React.FC<ChatViewProps> = ({
                         <p className="text-[10px] text-charcoal/50 font-medium">
                           {msg.draftEvent.date} • {msg.draftEvent.startTime}
                           {msg.draftEvent.daysOfWeek && msg.draftEvent.daysOfWeek.length > 0 && 
-                            ` • ${msg.draftEvent.daysOfWeek.map(d => t.common.shortWeekDays[d]).join(', ')}`
+                            ` • ${msg.draftEvent.daysOfWeek.map(d => t.common.shortWeekDays[d === 0 ? 6 : d - 1]).join(', ')}`
                           }
                         </p>
                       )}

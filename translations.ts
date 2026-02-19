@@ -17,7 +17,7 @@ export const translations = {
       edit: 'Edit',
       details: 'View Details',
       weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-      shortWeekDays: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+      shortWeekDays: ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su']
     },
     nav: {
       secretary: 'Secretary',

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, useLocation, Link } from 'react-router-dom';
 import ChatView from './views/ChatView';
@@ -153,16 +154,23 @@ const App: React.FC = () => {
   const syncGoogleData = useCallback(async (token: string) => {
     setIsSyncing(true);
     try {
+      // 1. Fetch Calendar
       const calendarResponse = await fetch(
         `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=50&singleEvents=true&orderBy=startTime`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (calendarResponse.status === 401) throw new Error('Unauthorized');
+      
+      if (!calendarResponse.ok) {
+        if (calendarResponse.status === 401) throw new Error('Unauthorized');
+        const errBody = await calendarResponse.json().catch(() => ({}));
+        console.error("Calendar Sync Error:", errBody);
+        throw new Error(`Calendar API Error: ${calendarResponse.status}`);
+      }
+      
       const calendarData = await calendarResponse.json();
       const googleEvents: Event[] = (calendarData.items || []).map((item: any) => {
         const start = item.start.dateTime || item.start.date;
         const date = start.split('T')[0];
-        // Use 24h format for sync
         const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : 'All Day';
         const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         return {
@@ -179,8 +187,22 @@ const App: React.FC = () => {
         };
       });
 
+      // 2. Fetch Tasks
       const tasksResponse = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks?maxResults=50', { headers: { Authorization: `Bearer ${token}` } });
-      if (tasksResponse.status === 401) throw new Error('Unauthorized');
+      
+      if (!tasksResponse.ok) {
+         if (tasksResponse.status === 401) throw new Error('Unauthorized');
+         const errBody = await tasksResponse.json().catch(() => ({}));
+         console.error("Tasks Sync Error:", errBody);
+         
+         // Specific check for "403 Forbidden" which often means API not enabled or scope issue
+         if (tasksResponse.status === 403) {
+            console.warn("Google Tasks API 403 Forbidden. Is the API enabled in Google Cloud Console?");
+            throw new Error(`Tasks API 403 Forbidden: ${JSON.stringify(errBody)}`);
+         }
+         throw new Error(`Tasks API Error: ${tasksResponse.status}`);
+      }
+      
       const tasksData = await tasksResponse.json();
       const googleTasks: Task[] = (tasksData.items || []).filter((item: any) => item.title).map((item: any) => {
         const date = item.due ? item.due.split('T')[0] : '';
@@ -203,11 +225,16 @@ const App: React.FC = () => {
       setLastSyncTime(now);
       localStorage.setItem('kairos_last_sync', now);
       setIsGoogleConnected(true);
+      
     } catch (err: any) {
       console.error("Sync failed:", err);
-      if (err.message === 'Unauthorized') {
+      // If unauthorized or forbidden, clear token to force re-login/re-consent
+      if (err.message === 'Unauthorized' || err.message.includes('Forbidden')) {
         localStorage.removeItem('kairos_google_token');
         setIsGoogleConnected(false);
+        if (err.message.includes('Forbidden')) {
+            alert("Sync failed (403 Forbidden). Please check if 'Google Tasks API' is enabled in your Google Cloud Console project.");
+        }
       }
     } finally {
       setIsSyncing(false);
@@ -295,7 +322,97 @@ const App: React.FC = () => {
       source: 'local',
       ...event 
     };
+    
+    // 1. Optimistic Update
     setEvents(prev => [...prev, newEvent]);
+
+    // 2. Sync to Google Calendar
+    if (isGoogleConnected) {
+      const token = localStorage.getItem('kairos_google_token');
+      if (!token) return;
+
+      try {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        
+        // Construct ISO strings for Google (Google expects RFC3339)
+        const startDateTime = new Date(`${newEvent.date}T${newEvent.startTime}:00`);
+        const endDateTime = new Date(`${newEvent.date}T${newEvent.endTime}:00`);
+        
+        const googleEventPayload: any = {
+          summary: newEvent.title,
+          description: newEvent.description,
+          location: newEvent.location,
+          start: {
+            dateTime: startDateTime.toISOString(),
+            timeZone: timeZone
+          },
+          end: {
+            dateTime: endDateTime.toISOString(),
+            timeZone: timeZone
+          }
+        };
+
+        if (newEvent.recurrence && newEvent.recurrence !== 'none') {
+           const rruleMap: Record<string, string> = {
+             'daily': 'RRULE:FREQ=DAILY',
+             'weekly': 'RRULE:FREQ=WEEKLY',
+             'weekdays': 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+             'monthly': 'RRULE:FREQ=MONTHLY',
+           };
+           
+           if (rruleMap[newEvent.recurrence]) {
+             googleEventPayload.recurrence = [rruleMap[newEvent.recurrence]];
+           } else if (newEvent.recurrence === 'specific_days' && newEvent.daysOfWeek) {
+             const days = ['SU','MO','TU','WE','TH','FR','SA'];
+             const byDay = newEvent.daysOfWeek.map(d => days[d]).join(',');
+             googleEventPayload.recurrence = [`RRULE:FREQ=WEEKLY;BYDAY=${byDay}`];
+           }
+        }
+
+        const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(googleEventPayload)
+        });
+
+        if (!res.ok) throw new Error(`Google API Error: ${res.status}`);
+        
+        const data = await res.json();
+        
+        // Update the local event with Google ID and Source
+        setEvents(prev => prev.map(e => e.id === newId ? { 
+          ...e, 
+          id: `google-${data.id}`, 
+          source: 'google', 
+          externalId: data.id 
+        } : e));
+
+      } catch (err) {
+        console.error("Failed to add event to Google Calendar:", err);
+      }
+    }
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    const eventToDelete = events.find(e => e.id === id);
+    setEvents(prev => prev.filter(e => e.id !== id));
+
+    if (isGoogleConnected && eventToDelete?.source === 'google' && eventToDelete.externalId) {
+      const token = localStorage.getItem('kairos_google_token');
+      if (token) {
+        try {
+           await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventToDelete.externalId}`, {
+             method: 'DELETE',
+             headers: { 'Authorization': `Bearer ${token}` }
+           });
+        } catch(e) {
+           console.error("Failed to delete Google Calendar event", e);
+        }
+      }
+    }
   };
 
   const handleEditEvent = (id: string, updates: Partial<Event>) => {
@@ -303,8 +420,9 @@ const App: React.FC = () => {
   };
 
   const handleAddTask = async (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) => {
+    const tempId = Date.now().toString();
     const newTask: Task = { 
-      id: Date.now().toString(), 
+      id: tempId, 
       title, 
       category, 
       date, 
@@ -314,7 +432,96 @@ const App: React.FC = () => {
       source: 'local',
       priority: priority || 'normal'
     };
+    
+    // 1. Optimistic Update
     setTasks(prev => [...prev, newTask]);
+
+    // 2. Sync to Google Tasks
+    if (isGoogleConnected) {
+       const token = localStorage.getItem('kairos_google_token');
+       if (token) {
+         try {
+           // Construct Payload
+           const taskBody: any = { title: title, notes: description || '' };
+           if (date) {
+             // Google Tasks 'due' must be RFC 3339 timestamp. 
+             // We use 12:00 UTC to safely map to a specific "date" without timezone rollovers.
+             taskBody.due = new Date(date + 'T12:00:00Z').toISOString();
+           }
+
+           const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+             method: 'POST',
+             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+             body: JSON.stringify(taskBody)
+           });
+
+           if (res.ok) {
+             const data = await res.json();
+             // Update local task with Google ID
+             setTasks(prev => prev.map(t => t.id === tempId ? {
+                ...t,
+                id: `google-${data.id}`,
+                externalId: data.id,
+                source: 'google'
+             } : t));
+           }
+         } catch (e) {
+           console.error("Failed to create Google Task", e);
+         }
+       }
+    }
+  };
+
+  const handleToggleTask = async (id: string) => {
+    // 1. Find Task
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    const newStatus = !task.completed;
+
+    // 2. Optimistic Update
+    setTasks(prev => prev.map(t => t.id === id ? {...t, completed: newStatus} : t));
+
+    // 3. Google Sync (Patch)
+    if (isGoogleConnected && task.source === 'google' && task.externalId) {
+      const token = localStorage.getItem('kairos_google_token');
+      if (token) {
+        try {
+           await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.externalId}`, {
+             method: 'PATCH',
+             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+               status: newStatus ? 'completed' : 'needsAction'
+             })
+           });
+        } catch (e) {
+           console.error("Failed to sync status to Google Task", e);
+        }
+      }
+    }
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    // 1. Find Task before delete to check sync status
+    const taskToDelete = tasks.find(t => t.id === id);
+
+    // 2. Optimistic Delete
+    setTasks(prev => prev.filter(t => t.id !== id));
+
+    // 3. Google Sync (Delete)
+    if (taskToDelete && isGoogleConnected && taskToDelete.source === 'google' && taskToDelete.externalId) {
+       const token = localStorage.getItem('kairos_google_token');
+       if (token) {
+          try {
+            await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${taskToDelete.externalId}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          } catch(e) {
+            console.error("Failed to delete Google Task", e);
+          }
+       }
+    }
   };
 
   const handleEditTask = (id: string, updates: Partial<Task>) => {
@@ -410,7 +617,7 @@ const App: React.FC = () => {
                   language={language} 
                   knowledgeBase={knowledgeBase}
                   onUpdateKnowledgeBase={setKnowledgeBase}
-                  onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} 
+                  onDeleteEvent={handleDeleteEvent} 
                   onAddEvent={handleAddEvent} 
                   onAddTask={handleAddTask} 
                   onEditEvent={handleEditEvent} 
@@ -430,8 +637,8 @@ const App: React.FC = () => {
                   language={language} 
                   knowledgeBase={knowledgeBase}
                   onUpdateKnowledgeBase={setKnowledgeBase}
-                  onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} 
-                  onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))} 
+                  onToggleTask={handleToggleTask} 
+                  onDeleteTask={handleDeleteTask} 
                   onAddTask={handleAddTask}
                   onAddEvent={handleAddEvent} 
                   onEditTask={handleEditTask}
@@ -444,7 +651,7 @@ const App: React.FC = () => {
                   isSyncing={isSyncing} 
                 />
               } />
-              <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={() => {}} />} />
+              <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={handleToggleTask} />} />
             </Routes>
           </div>
         </div>
