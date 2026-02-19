@@ -16,7 +16,6 @@ const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.go
 const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks";
 
 const App: React.FC = () => {
-  // Use local date instead of UTC to ensure "Today" is accurate to the user's timezone
   const TODAY = useMemo(() => {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
@@ -42,7 +41,6 @@ const App: React.FC = () => {
         onboardingComplete: false
       };
     } catch (e) {
-      console.error("Error loading prefs", e);
       return { userName: 'User', assistantName: 'Kairos', theme: 'cream', onboardingComplete: false };
     }
   });
@@ -97,14 +95,12 @@ const App: React.FC = () => {
     }
   });
   
-  // New Knowledge Base Agent State
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase>(() => {
     try {
       const saved = localStorage.getItem('kairos_knowledge_base');
       if (saved) return JSON.parse(saved);
     } catch (e) { console.error("KB Load Error", e); }
     
-    // Default initial state
     return {
       user_name: 'User',
       core_stack: [],
@@ -129,7 +125,6 @@ const App: React.FC = () => {
   const location = useLocation();
   const tokenClient = useRef<any>(null);
 
-  // --- Dynamic Initial Message Update ---
   useEffect(() => {
     if (activeChat && activeChat.messages.length === 1 && activeChat.messages[0].role === 'assistant') {
       const newInitialMsg = t.chat.initialMsg(prefs.userName, prefs.assistantName);
@@ -165,8 +160,8 @@ const App: React.FC = () => {
       const googleEvents: Event[] = (calendarData.items || []).map((item: any) => {
         const start = item.start.dateTime || item.start.date;
         const date = start.split('T')[0];
-        const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : 'All Day';
-        const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+        const startTime = item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'All Day';
+        const endTime = item.end.dateTime ? new Date(item.end.dateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         return {
           id: `google-${item.id}`,
           externalId: item.id,
@@ -206,13 +201,12 @@ const App: React.FC = () => {
 
       setEvents(prev => [...prev.filter(e => e.source !== 'google'), ...googleEvents]);
       setTasks(prev => [...prev.filter(t => t.source !== 'google'), ...googleTasks]);
-      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
       setLastSyncTime(now);
       localStorage.setItem('kairos_last_sync', now);
       setIsGoogleConnected(true);
       
     } catch (err: any) {
-      console.error("Sync failed:", err);
       if (err.message === 'Unauthorized' || err.message.includes('Forbidden')) {
         localStorage.removeItem('kairos_google_token');
         setIsGoogleConnected(false);
@@ -316,7 +310,7 @@ const App: React.FC = () => {
           description: newEvent.description,
           location: newEvent.location,
           start: { dateTime: startDateTime.toISOString(), timeZone },
-          end: { endDateTime: endDateTime.toISOString(), timeZone }
+          end: { dateTime: endDateTime.toISOString(), timeZone }
         };
         const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
           method: 'POST',
@@ -347,8 +341,32 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEditEvent = (id: string, updates: Partial<Event>) => {
-    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  const handleEditEvent = async (id: string, updates: Partial<Event>) => {
+    const event = events.find(e => e.id === id);
+    if (!event) return;
+    const updatedEvent = { ...event, ...updates };
+    setEvents(prev => prev.map(e => e.id === id ? updatedEvent : e));
+    if (isGoogleConnected && event.source === 'google' && event.externalId) {
+      const token = localStorage.getItem('kairos_google_token');
+      if (token) {
+        try {
+          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const startDateTime = new Date(`${updatedEvent.date}T${updatedEvent.startTime}:00`);
+          const endDateTime = new Date(`${updatedEvent.date}T${updatedEvent.endTime}:00`);
+          await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${event.externalId}`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              summary: updatedEvent.title,
+              description: updatedEvent.description,
+              location: updatedEvent.location,
+              start: { dateTime: startDateTime.toISOString(), timeZone },
+              end: { dateTime: endDateTime.toISOString(), timeZone }
+            })
+          });
+        } catch (e) { console.error("Failed to update Google Calendar event", e); }
+      }
+    }
   };
 
   const handleAddTask = async (title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) => {
@@ -410,8 +428,25 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEditTask = (id: string, updates: Partial<Task>) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  const handleEditTask = async (id: string, updates: Partial<Task>) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const updatedTask = { ...task, ...updates };
+    setTasks(prev => prev.map(t => t.id === id ? updatedTask : t));
+    if (isGoogleConnected && task.source === 'google' && task.externalId) {
+      const token = localStorage.getItem('kairos_google_token');
+      if (token) {
+        try {
+          const body: any = { title: updatedTask.title, notes: updatedTask.description || '' };
+          if (updatedTask.date) body.due = new Date(updatedTask.date + 'T12:00:00Z').toISOString();
+          await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.externalId}`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+        } catch (e) { console.error("Failed to update Google Task", e); }
+      }
+    }
   };
 
   const handleNewChat = () => {
@@ -459,7 +494,6 @@ const App: React.FC = () => {
               <h1 className="text-[11px] font-black uppercase tracking-[0.25em] text-charcoal/20">{prefs.assistantName} — {prefs.userName}</h1>
            </div>
            <div className="flex items-center gap-2">
-              {/* Conditional Auth Header UI */}
               {isGoogleConnected ? (
                 <div className="flex items-center gap-2">
                   <button 

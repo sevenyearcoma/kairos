@@ -5,7 +5,6 @@ import { ChatMessage, Event, Task, ChatSession, Personality, Language, MemoryIte
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 
-// Extend Window interface for Web Speech API support
 declare global {
   interface Window {
     webkitSpeechRecognition: any;
@@ -40,17 +39,16 @@ interface ChatViewProps {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ 
-  activeChat, personality, tasks, events, memory, knowledgeBase, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onUpdateKnowledgeBase, onSetSynced, onUpdatePrefs
+  activeChat, tasks, events, knowledgeBase, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onUpdateKnowledgeBase, onSetSynced, onUpdatePrefs
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [agentStatus, setAgentStatus] = useState<string>(''); // For UI feedback on double-agent steps
+  const [agentStatus, setAgentStatus] = useState<string>(''); 
   
-  // Voice Input State
   const [isListening, setIsListening] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const recognitionRef = useRef<any>(null);
-  const baseInputRef = useRef(''); // Stores text present before recording started
+  const baseInputRef = useRef('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,17 +56,14 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const messages = (activeChat?.messages || []);
 
-  // Compute local date logic once per render for display stats
   const { todayStr, tomorrowStr, todayEventsCount, todayTasksCount } = useMemo(() => {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
     const localDate = new Date(d.getTime() - offset);
     const tStr = localDate.toISOString().split('T')[0];
-
     const tmr = new Date(localDate);
     tmr.setDate(tmr.getDate() + 1);
     const tmrStr = tmr.toISOString().split('T')[0];
-    
     return {
       todayStr: tStr,
       tomorrowStr: tmrStr,
@@ -81,7 +76,6 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; 
   }, [messages, isAiThinking, agentStatus]);
 
-  // Auto-resize Textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -89,31 +83,20 @@ const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [input]);
 
-  // Clean up speech recognition on unmount
   useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
+    return () => { if (recognitionRef.current) recognitionRef.current.stop(); };
   }, []);
 
-  // Timer for recording
   useEffect(() => {
     let interval: number;
     if (isListening) {
       interval = window.setInterval(() => {
         setRecordingTime(prev => {
-          if (prev >= 120) { // 120 seconds = 2 minutes limit
-            stopListening();
-            return prev;
-          }
+          if (prev >= 120) { stopListening(); return prev; }
           return prev + 1;
         });
       }, 1000);
-    } else {
-      setRecordingTime(0);
-    }
+    } else { setRecordingTime(0); }
     return () => clearInterval(interval);
   }, [isListening]);
 
@@ -124,76 +107,38 @@ const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const stopListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
+    if (recognitionRef.current) recognitionRef.current.stop();
     setIsListening(false);
   };
 
   const toggleListening = () => {
-    if (isListening) {
-      stopListening();
-      return;
-    }
-
+    if (isListening) { stopListening(); return; }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Voice input is not supported in this browser.");
-      return;
-    }
-
+    if (!SpeechRecognition) { alert("Voice input is not supported."); return; }
     const recognition = new SpeechRecognition();
     recognition.lang = language === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.interimResults = true; // Crucial for Russian
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setRecordingTime(0);
-      baseInputRef.current = input; // Capture existing text
-    };
-    
-    recognition.onend = () => {
-      setIsListening(false); 
-    };
-    
+    recognition.onstart = () => { setIsListening(true); setRecordingTime(0); baseInputRef.current = input; };
+    recognition.onend = () => setIsListening(false);
     recognition.onresult = (event: any) => {
       let currentTranscript = '';
-      
-      // Reconstruct transcript from all results (final + interim)
-      // This is vital for Russian where 'isFinal' is delayed
-      for (let i = 0; i < event.results.length; ++i) {
-        currentTranscript += event.results[i][0].transcript;
-      }
-
+      for (let i = 0; i < event.results.length; ++i) currentTranscript += event.results[i][0].transcript;
       if (currentTranscript) {
-        // Append current session transcript to what was there before recording started
         const separator = baseInputRef.current && !baseInputRef.current.endsWith(' ') ? ' ' : '';
         setInput(baseInputRef.current + separator + currentTranscript);
       }
     };
-
     recognitionRef.current = recognition;
     recognition.start();
   };
 
   const handleClearChat = () => {
     if (messages.length <= 1 || isAiThinking) return;
-    
     if (window.confirm(t.chat.clearConfirm)) {
       const initialMsgContent = t.chat.initialMsg(prefs.userName, prefs.assistantName);
-      const resetMessages: ChatMessage[] = [{
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: initialMsgContent
-      }];
-      
-      const resetTitle = language === 'en' ? 'New Conversation' : 'Новый разговор';
-      
-      onUpdateMessages(activeChat.id, resetMessages, resetTitle);
-      
-      // Reset local UI states
+      onUpdateMessages(activeChat.id, [{ id: Date.now().toString(), role: 'assistant', content: initialMsgContent }], language === 'en' ? 'New Conversation' : 'Новый разговор');
       setInput('');
       setAgentStatus('');
       setIsAiThinking(false);
@@ -206,103 +151,47 @@ const ChatView: React.FC<ChatViewProps> = ({
     
     const userText = input;
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: userText };
-    
-    // Protect against stale messages prop by building the new history locally
     const currentHistory = [...messages, userMsg];
     onUpdateMessages(activeChat.id, currentHistory);
-    
     setInput('');
-    // Reset height immediately
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-
     setIsAiThinking(true);
     
-    // START AI PIPELINE
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       let currentKnowledge = knowledgeBase;
 
-      // --- STEP 0: MEMORY MANAGER AGENT ---
-      setAgentStatus(t.chat.updatingMemory); // "Updating context..."
-      
-      const memorySystemInstruction = `
-        Role: Kairos Memory Manager.
-        Task: Maintain a curated "User Knowledge Base" in JSON format.
-        
-        Current Knowledge Context:
-        ${JSON.stringify(knowledgeBase)}
-
-        User Input: "${userText}"
-
-        RULES:
-        1. EXTRACT: Identify new facts about the user (e.g., job, tech stack, habits, goals, aesthetics).
-        2. MERGE: Combine related facts into a single point. 
-           Example: "React Developer" + "Uses Next.js" -> "Frontend Stack: React, Next.js".
-        3. LIMIT: The knowledge base should contain approx 15 distinct high-level "knowledge points" (keys or array items).
-        4. EVICT: If the limit is reached, remove the least relevant or oldest fact to make room for new, more important info.
-        5. OUTPUT: Return the FULL updated JSON object. Structure it as a flat object or categorical object.
-        
-        Focus on: user_name, background, current_projects, interests, preferences.
-      `;
-
-      const memoryResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: "Update Context.",
-        config: {
-          systemInstruction: memorySystemInstruction,
-          responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 },
-        }
-      });
-      
+      setAgentStatus(t.chat.updatingMemory);
+      const memorySystemInstruction = `Role: Kairos Memory Manager. TASK: Maintain Knowledge Base JSON. CONTEXT: ${JSON.stringify(knowledgeBase)}. USER: "${userText}". RULES: 1. Extract facts. 2. Merge points. 3. Limit ~15 pts. 4. Evict old. OUTPUT: Full Updated JSON.`;
+      const memoryResponse = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: "Update Context.", config: { systemInstruction: memorySystemInstruction, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } });
       try {
         const updatedKb = JSON.parse(memoryResponse.text || "{}");
         if (Object.keys(updatedKb).length > 0) {
           onUpdateKnowledgeBase(updatedKb);
           currentKnowledge = updatedKb;
-          
-          // Sync name if changed
-          if (updatedKb.user_name && updatedKb.user_name !== prefs.userName) {
-            onUpdatePrefs({ ...prefs, userName: updatedKb.user_name });
-          }
+          if (updatedKb.user_name && updatedKb.user_name !== prefs.userName) onUpdatePrefs({ ...prefs, userName: updatedKb.user_name });
         }
-      } catch (err) {
-        console.warn("Memory Agent failed to parse JSON, using old context", err);
-      }
+      } catch (err) { console.warn("Memory Agent failed", err); }
 
-      // --- CONTEXT CONSTRUCTION ---
       const now = new Date();
       const offset = now.getTimezoneOffset() * 60000;
-      const currentTimeStr = new Date(now.getTime() - offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      const currentTimeStr = new Date(now.getTime() - offset).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const currentDayName = dayNames[now.getDay()];
-
       const chatHistoryStr = currentHistory.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
-      // --- STEP 1: ARCHITECT (Structural Logic) ---
-      setAgentStatus(t.chat.thinking); // "Kairos is planning..."
-
+      setAgentStatus(t.chat.thinking);
       const architectSystemInstruction = `
-        You are the 'Architect' module of Kairos.
-        User Context (Memory Agent Output): ${JSON.stringify(currentKnowledge)}
-        Date: ${todayStr} (${currentDayName}). Time: ${currentTimeStr}.
-
-        Analyze the Request: "${userText}"
-        History:
-        ${chatHistoryStr}
-
-        Task: Extract intent and structured data.
-        1. Intent: 'create_event' (timed), 'create_task' (untimed/todo), 'general' (chat), 'update_prefs'.
-        2. Extract any new user facts to 'newFact'.
-        3. Determine 'kairosInsight' (warning/tip) if needed.
-        4. Draft 'details' for events/tasks. Title must be <6 words.
-        
-        CRITICAL TIME RULES:
-        - 'endTime' MUST ALWAYS be chronologically after 'startTime'.
-        - If the user provides a time range like "10 to 11", startTime is 10:00, endTime is 11:00.
-        - If the user provides only one time like "at 6pm", default 'endTime' to 1 hour later (19:00).
-        - NEVER generate an 'endTime' that is earlier than or equal to 'startTime' on the same day.
-        
+        You are the 'Architect' module of Kairos. 
+        CONTEXT: ${JSON.stringify(currentKnowledge)}. DATE: ${todayStr} (${currentDayName}). TIME: ${currentTimeStr}.
+        EXISTING SCHEDULE (Avoid Overlaps!): ${JSON.stringify(events.filter(e => isItemOnDate(e, todayStr)))}
+        REQUEST: "${userText}"
+        HISTORY: ${chatHistoryStr}
+        TASK: Determine intent ('create_event', 'create_task', 'general', 'update_prefs').
+        TIME RULES: 
+        1. endTime MUST be after startTime.
+        2. NO OVERLAP with existing schedule. If requested time is busy, suggest next available slot.
+        3. Title < 6 words.
         Output JSON ONLY.
       `;
 
@@ -312,157 +201,45 @@ const ChatView: React.FC<ChatViewProps> = ({
         config: {
           systemInstruction: architectSystemInstruction,
           responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 }, // Speed optimization
+          thinkingConfig: { thinkingBudget: 0 },
           responseSchema: {
             type: Type.OBJECT,
             properties: {
               intent: { type: Type.STRING, enum: ["general", "create_event", "create_task", "update_prefs"] },
               newFact: { type: Type.STRING, nullable: true },
-              kairosInsight: {
-                type: Type.OBJECT,
-                properties: {
-                  type: { type: Type.STRING, enum: ["warning", "encouragement", "tip"] },
-                  message: { type: Type.STRING }
-                },
-                nullable: true
-              },
-              details: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  date: { type: Type.STRING },
-                  startTime: { type: Type.STRING },
-                  endTime: { type: Type.STRING },
-                  category: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  priority: { type: Type.STRING, enum: ["urgent", "high", "normal", "low"] },
-                  recurrence: { type: Type.STRING, enum: ["none", "daily", "weekly", "weekdays", "specific_days", "monthly"] },
-                  daysOfWeek: { type: Type.ARRAY, items: { type: Type.INTEGER } },
-                  dayOfMonth: { type: Type.INTEGER }
-                },
-                nullable: true
-              },
-              architectNote: { type: Type.STRING, description: "Brief note to the Editor about what was decided." }
+              kairosInsight: { type: Type.OBJECT, properties: { type: { type: Type.STRING }, message: { type: Type.STRING } }, nullable: true },
+              details: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, date: { type: Type.STRING }, startTime: { type: Type.STRING }, endTime: { type: Type.STRING }, category: { type: Type.STRING }, description: { type: Type.STRING }, priority: { type: Type.STRING }, recurrence: { type: Type.STRING } }, nullable: true }
             },
-            required: ["intent", "architectNote"]
+            required: ["intent"]
           }
         }
       });
 
       const architectPlan = JSON.parse(architectResponse.text || "{}");
-
-      // --- STEP 2: EDITOR (Personality & Phrasing) ---
-      setAgentStatus(t.chat.refining); // "Refining details..."
-
-      const editorSystemInstruction = `
-        You are Kairos, a kind, efficient, and responsible assistant.
-        Refine the Architect's plan into a warm, concise response to ${currentKnowledge.user_name || prefs.userName}.
-        
-        User Knowledge: ${JSON.stringify(currentKnowledge)}
-        Architect's Plan: ${JSON.stringify(architectPlan)}
-        User Request: "${userText}"
-        
-        Language: ${language === 'ru' ? 'Russian' : 'English'}.
-        Tone: ${currentKnowledge.preferences?.tone || "Professional yet warm"}. Be concise.
-        
-        Output PLAIN TEXT response only.
-      `;
-
-      const editorResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: "Generate response.",
-        config: {
-          systemInstruction: editorSystemInstruction,
-          responseMimeType: "text/plain",
-          thinkingConfig: { thinkingBudget: 0 } // Speed optimization
-        }
-      });
-
+      setAgentStatus(t.chat.refining);
+      const editorSystemInstruction = `Kairos Assistant. User Knowledge: ${JSON.stringify(currentKnowledge)}. Architect Plan: ${JSON.stringify(architectPlan)}. Request: "${userText}". Language: ${language === 'ru' ? 'Russian' : 'English'}. Tone: ${currentKnowledge.preferences?.tone || "Professional yet warm"}. Concisely respond to the user. Output PLAIN TEXT only.`;
+      const editorResponse = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: "Generate response.", config: { systemInstruction: editorSystemInstruction, responseMimeType: "text/plain", thinkingConfig: { thinkingBudget: 0 } } });
       const finalReply = editorResponse.text;
 
-      // Process results
-      if (architectPlan.newFact) {
-        onAddMemory({ text: architectPlan.newFact, timestamp: Date.now() });
-      }
+      if (architectPlan.newFact) onAddMemory({ text: architectPlan.newFact, timestamp: Date.now() });
 
-      let draftEventData = undefined;
-      let draftTaskData = undefined;
+      let draftEventData = architectPlan.intent === 'create_event' && architectPlan.details ? { ...architectPlan.details, date: architectPlan.details.date || todayStr, startTime: architectPlan.details.startTime || '09:00', endTime: architectPlan.details.endTime || '10:00' } : undefined;
+      let draftTaskData = architectPlan.intent === 'create_task' && architectPlan.details ? { ...architectPlan.details, date: architectPlan.details.date || todayStr, priority: architectPlan.details.priority || 'normal' } : undefined;
 
-      if (architectPlan.intent === 'create_event' && architectPlan.details) {
-        draftEventData = {
-          ...architectPlan.details,
-          date: architectPlan.details.date || todayStr,
-          startTime: architectPlan.details.startTime || '09:00',
-          endTime: architectPlan.details.endTime || '10:00',
-          title: architectPlan.details.title || 'New Event'
-        };
-      } else if (architectPlan.intent === 'create_task' && architectPlan.details) {
-        draftTaskData = {
-          ...architectPlan.details,
-          date: architectPlan.details.date || todayStr,
-          title: architectPlan.details.title || 'New Task',
-          priority: architectPlan.details.priority || 'normal',
-          category: architectPlan.details.category || 'Personal'
-        };
-      }
-
-      const aiMsg: ChatMessage = { 
-        id: (Date.now() + 1).toString(), 
-        role: 'assistant', 
-        content: finalReply,
-        isSynced: false,
-        kairosInsight: architectPlan.kairosInsight,
-        draftTask: draftTaskData,
-        draftEvent: draftEventData
-      };
-      
+      const aiMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'assistant', content: finalReply, isSynced: false, kairosInsight: architectPlan.kairosInsight, draftTask: draftTaskData, draftEvent: draftEventData };
       onUpdateMessages(activeChat.id, [...currentHistory, aiMsg]);
     } catch (e: any) { 
-      console.error("Gemini Error:", e);
-      onUpdateMessages(activeChat.id, [...currentHistory, { 
-        id: Date.now().toString(), 
-        role: 'assistant', 
-        content: t.chat.error 
-      }]);
-    } finally { 
-      setIsAiThinking(false);
-      setAgentStatus('');
-    }
+      onUpdateMessages(activeChat.id, [...currentHistory, { id: Date.now().toString(), role: 'assistant', content: t.chat.error }]);
+    } finally { setIsAiThinking(false); setAgentStatus(''); }
   };
 
   const handleAcceptDraft = (msg: ChatMessage) => {
-    if (msg.draftTask) {
-      onAddTask(
-        msg.draftTask.title || 'Untitled Task', 
-        msg.draftTask.category || 'Personal', 
-        msg.draftTask.date || todayStr, 
-        msg.draftTask.description,
-        msg.draftTask.recurrence as any || 'none',
-        msg.draftTask.priority as any || 'normal'
-      );
-    } else if (msg.draftEvent) {
-      onAddEvent({
-        title: msg.draftEvent.title || 'Untitled Event',
-        date: msg.draftEvent.date || todayStr,
-        startTime: msg.draftEvent.startTime || '09:00',
-        endTime: msg.draftEvent.endTime || '10:00',
-        description: msg.draftEvent.description,
-        recurrence: msg.draftEvent.recurrence as any || 'none',
-        daysOfWeek: msg.draftEvent.daysOfWeek,
-        dayOfMonth: msg.draftEvent.dayOfMonth
-      });
-    }
+    if (msg.draftTask) onAddTask(msg.draftTask.title || 'Untitled', msg.draftTask.category || 'Personal', msg.draftTask.date || todayStr, msg.draftTask.description, msg.draftTask.recurrence as any || 'none', msg.draftTask.priority as any || 'normal');
+    else if (msg.draftEvent) onAddEvent({ ...msg.draftEvent });
     onSetSynced(activeChat.id, msg.id);
   };
 
   const hasSpeechSupport = typeof window !== 'undefined' && (!!window.SpeechRecognition || !!window.webkitSpeechRecognition);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   return (
     <div className="flex flex-col h-full gap-8 max-w-4xl mx-auto">
@@ -472,180 +249,47 @@ const ChatView: React.FC<ChatViewProps> = ({
           <div className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl space-y-6">
              <h2 className="text-xl font-display font-black text-charcoal">{t.settings.title}</h2>
              <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-charcoal/30 mb-1 block">{t.settings.userName}</label>
-                  <input maxLength={50} className="w-full bg-beige-soft border-none rounded-xl py-3 px-4 font-bold" value={prefs.userName} onChange={(e) => onUpdatePrefs({...prefs, userName: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-charcoal/30 mb-1 block">{t.settings.assistantName}</label>
-                  <input maxLength={30} className="w-full bg-beige-soft border-none rounded-xl py-3 px-4 font-bold" value={prefs.assistantName} onChange={(e) => onUpdatePrefs({...prefs, assistantName: e.target.value})} />
-                </div>
+                <div><label className="text-[10px] font-black uppercase text-charcoal/30 mb-1 block">{t.settings.userName}</label><input maxLength={50} className="w-full bg-beige-soft border-none rounded-xl py-3 px-4 font-bold" value={prefs.userName} onChange={(e) => onUpdatePrefs({...prefs, userName: e.target.value})} /></div>
+                <div><label className="text-[10px] font-black uppercase text-charcoal/30 mb-1 block">{t.settings.assistantName}</label><input maxLength={30} className="w-full bg-beige-soft border-none rounded-xl py-3 px-4 font-bold" value={prefs.assistantName} onChange={(e) => onUpdatePrefs({...prefs, assistantName: e.target.value})} /></div>
              </div>
              <button onClick={() => setShowSettings(false)} className="w-full py-4 bg-charcoal text-cream rounded-2xl font-black uppercase text-[10px] tracking-widest">{t.settings.save}</button>
-             
-             <a href="/privacy" target="_blank" rel="noopener noreferrer" className="block text-center text-[10px] font-bold text-charcoal/30 hover:text-charcoal mt-4 uppercase tracking-widest transition-colors">
-               {language === 'ru' ? 'Политика конфиденциальности' : 'Privacy Policy'}
-             </a>
           </div>
         </div>
       )}
-
       <div className="flex items-center justify-between px-6">
          <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-charcoal/20">{t.chat.capacity(todayEventsCount, todayTasksCount)}</h2>
          <div className="flex gap-2">
-            <button 
-              onClick={handleClearChat}
-              disabled={messages.length <= 1 || isAiThinking}
-              className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30 disabled:hover:text-charcoal/40 disabled:hover:bg-white"
-              title={t.chat.clearChat}
-            >
-              <span className="material-symbols-outlined text-xl">sweep</span>
-            </button>
-            <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all">
-              <span className="material-symbols-outlined text-xl">settings</span>
-            </button>
+            <button onClick={handleClearChat} disabled={messages.length <= 1 || isAiThinking} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-30"><span className="material-symbols-outlined text-xl">sweep</span></button>
+            <button onClick={() => setShowSettings(true)} className="size-10 bg-white border border-charcoal/5 rounded-xl flex items-center justify-center text-charcoal/40 hover:text-charcoal transition-all"><span className="material-symbols-outlined text-xl">settings</span></button>
          </div>
       </div>
-
       <div className="flex-1 flex flex-col min-h-0 bg-white/40 border border-charcoal/5 rounded-[2.5rem] shadow-sm overflow-hidden">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-8 space-y-6 scrollbar-hide">
           {messages.map((msg) => (
             <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[85%] p-5 rounded-3xl text-[14px] leading-relaxed ${msg.role === 'user' ? 'bg-charcoal text-white rounded-tr-none' : 'bg-white border border-charcoal/10 text-charcoal rounded-tl-none shadow-sm'}`}>
                 <div className="whitespace-pre-wrap">{msg.content}</div>
-                
-                {msg.kairosInsight && (
-                  <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/20 flex gap-3">
-                    <span className="material-symbols-outlined text-[18px] text-primary">tips_and_updates</span>
-                    <p className="text-[11px] font-bold text-charcoal/80">{msg.kairosInsight.message}</p>
-                  </div>
-                )}
-
+                {msg.kairosInsight && <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/20 flex gap-3"><span className="material-symbols-outlined text-[18px] text-primary">tips_and_updates</span><p className="text-[11px] font-bold text-charcoal/80">{msg.kairosInsight.message}</p></div>}
                 {(msg.draftTask || msg.draftEvent) && (
                   <div className="mt-4 p-4 bg-beige-soft border border-charcoal/5 text-charcoal rounded-2xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <p className="text-[9px] font-black uppercase opacity-40">{msg.draftTask ? t.calendar.task : t.calendar.event}</p>
-                      <div className="flex gap-1">
-                        {((msg.draftEvent?.recurrence && msg.draftEvent.recurrence !== 'none') || (msg.draftTask?.recurrence && msg.draftTask.recurrence !== 'none')) && (
-                          <span className="text-[8px] font-black bg-primary/20 text-primary px-1.5 py-0.5 rounded-full uppercase">
-                            {t.recurrence[(msg.draftEvent?.recurrence || msg.draftTask?.recurrence || 'none') as Exclude<keyof typeof t.recurrence, 'weeklyLabel'>]}
-                          </span>
-                        )}
-                        {msg.draftTask?.priority && (
-                           <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${
-                             msg.draftTask.priority === 'urgent' ? 'bg-red-100 text-red-700' :
-                             msg.draftTask.priority === 'high' ? 'bg-blue-100 text-blue-700' :
-                             msg.draftTask.priority === 'low' ? 'bg-charcoal/5 text-charcoal/50' :
-                             'bg-emerald-100 text-emerald-700'
-                           }`}>
-                             {msg.draftTask.priority}
-                           </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="font-extrabold text-charcoal">{(msg.draftTask || msg.draftEvent)?.title}</h4>
-                      {msg.draftEvent && (
-                        <p className="text-[10px] text-charcoal/50 font-medium">
-                          {msg.draftEvent.date} • {msg.draftEvent.startTime}
-                          {msg.draftEvent.daysOfWeek && msg.draftEvent.daysOfWeek.length > 0 && 
-                            ` • ${[...msg.draftEvent.daysOfWeek]
-                              .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-                              .map(d => t.common.shortWeekDays[(d + 6) % 7])
-                              .join(', ')}`
-                          }
-                        </p>
-                      )}
-                      {msg.draftTask && (
-                        <p className="text-[10px] text-charcoal/50 font-medium">
-                          {msg.draftTask.category} • {msg.draftTask.date}
-                        </p>
-                      )}
-                    </div>
-                    <button 
-                      onClick={() => handleAcceptDraft(msg)} 
-                      disabled={msg.isSynced} 
-                      className="w-full py-2.5 bg-charcoal text-cream text-[9px] font-black uppercase rounded-xl disabled:opacity-30 disabled:bg-emerald-muted transition-all"
-                    >
-                      {msg.isSynced ? t.chat.added : t.chat.accept}
-                    </button>
+                    <p className="text-[9px] font-black uppercase opacity-40">{msg.draftTask ? t.calendar.task : t.calendar.event}</p>
+                    <h4 className="font-extrabold text-charcoal">{(msg.draftTask || msg.draftEvent)?.title}</h4>
+                    <button onClick={() => handleAcceptDraft(msg)} disabled={msg.isSynced} className="w-full py-2.5 bg-charcoal text-cream text-[9px] font-black uppercase rounded-xl disabled:opacity-30 transition-all">{msg.isSynced ? t.chat.added : t.chat.accept}</button>
                   </div>
                 )}
               </div>
             </div>
           ))}
-          {isAiThinking && (
-            <div className="flex items-center gap-3 animate-pulse-gentle">
-              <div className="size-2 bg-primary rounded-full"></div>
-              <div className="text-[10px] uppercase font-black text-charcoal/30">
-                {agentStatus || t.chat.thinking}
-              </div>
-            </div>
-          )}
+          {isAiThinking && <div className="flex items-center gap-3 animate-pulse-gentle"><div className="size-2 bg-primary rounded-full"></div><div className="text-[10px] uppercase font-black text-charcoal/30">{agentStatus || t.chat.thinking}</div></div>}
         </div>
         <div className="px-6 py-6 border-t border-charcoal/5 bg-white/60">
           <div className="flex items-end gap-3">
             <div className="relative flex-1">
-              {/* Active Voice Indicator Background */}
-              {isListening && (
-                <div className="absolute inset-0 rounded-2xl bg-red-500/10 animate-pulse pointer-events-none"></div>
-              )}
-              
-              <textarea 
-                ref={textareaRef}
-                maxLength={2000}
-                className={`
-                  w-full bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 pl-6 pr-14 text-sm font-medium transition-all resize-none overflow-y-auto min-h-[56px] max-h-[200px] scrollbar-hide
-                  ${isListening ? 'ring-2 ring-red-500/20 border-red-500/30' : ''}
-                `}
-                placeholder={isListening ? t.chat.listening : t.chat.placeholder} 
-                value={input} 
-                readOnly={isAiThinking || isListening} // Prevent typing conflict while speaking
-                rows={1}
-                onChange={(e) => setInput(e.target.value)} 
-                onKeyDown={handleKeyDown}
-              />
-              
-              {hasSpeechSupport && (
-                <div className="absolute right-2 bottom-2 flex items-center justify-center">
-                  <button
-                    onClick={toggleListening}
-                    className={`
-                      h-10 w-10 flex items-center justify-center rounded-xl transition-all duration-300
-                      ${isListening 
-                        ? 'bg-red-500 text-white shadow-lg scale-105' 
-                        : 'text-charcoal/20 hover:text-charcoal hover:bg-charcoal/5'
-                      }
-                    `}
-                    title={isListening ? "Stop Recording" : "Start Voice Input"}
-                  >
-                    {isListening ? (
-                       <div className="flex items-center justify-center gap-[2px]">
-                         <span className="w-1 h-3 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_infinite]"></span>
-                         <span className="w-1 h-5 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_0.1s_infinite]"></span>
-                         <span className="w-1 h-3 bg-white rounded-full animate-[pulse_0.5s_ease-in-out_0.2s_infinite]"></span>
-                       </div>
-                    ) : (
-                      <span className="material-symbols-outlined text-[20px]">mic</span>
-                    )}
-                  </button>
-                  
-                  {isListening && (
-                    <div className="absolute -top-6 right-0 bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-bottom-2">
-                       {formatTime(recordingTime)}
-                    </div>
-                  )}
-                </div>
-              )}
+              {isListening && <div className="absolute inset-0 rounded-2xl bg-red-500/10 animate-pulse pointer-events-none"></div>}
+              <textarea ref={textareaRef} className={`w-full bg-white border border-charcoal/10 focus:ring-primary focus:border-primary rounded-2xl py-4 pl-6 pr-14 text-sm font-medium transition-all resize-none overflow-y-auto min-h-[56px] max-h-[200px] scrollbar-hide ${isListening ? 'ring-2 ring-red-500/20' : ''}`} placeholder={isListening ? t.chat.listening : t.chat.placeholder} value={input} readOnly={isAiThinking || isListening} rows={1} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())} />
+              {hasSpeechSupport && <div className="absolute right-2 bottom-2"><button onClick={toggleListening} className={`h-10 w-10 flex items-center justify-center rounded-xl transition-all ${isListening ? 'bg-red-500 text-white' : 'text-charcoal/20 hover:text-charcoal'}`}><span className="material-symbols-outlined text-[20px]">{isListening ? 'stop' : 'mic'}</span></button></div>}
             </div>
-
-            <button 
-              onClick={handleSend} 
-              disabled={isAiThinking || !input.trim()} 
-              className="h-[56px] w-[56px] bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all group disabled:opacity-20 shrink-0"
-            >
-              <span className="material-symbols-outlined">send</span>
-            </button>
+            <button onClick={handleSend} disabled={isAiThinking || !input.trim()} className="h-[56px] w-[56px] bg-charcoal text-cream rounded-2xl flex items-center justify-center shadow-lg hover:bg-primary hover:text-charcoal transition-all disabled:opacity-20 shrink-0"><span className="material-symbols-outlined">send</span></button>
           </div>
         </div>
       </div>
