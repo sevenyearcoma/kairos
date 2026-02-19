@@ -100,12 +100,6 @@ const ChatView: React.FC<ChatViewProps> = ({
     return () => clearInterval(interval);
   }, [isListening]);
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
   const stopListening = () => {
     if (recognitionRef.current) recognitionRef.current.stop();
     setIsListening(false);
@@ -178,26 +172,45 @@ const ChatView: React.FC<ChatViewProps> = ({
       const currentTimeStr = new Date(now.getTime() - offset).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const currentDayName = dayNames[now.getDay()];
+      
+      // Get events for a 7-day window to ensure "tomorrow" and "next week" are visible
+      const relevantEvents = events.filter(e => {
+        const eDate = new Date(e.date);
+        const diff = (eDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        return diff >= -1 && diff <= 7;
+      });
+
       const chatHistoryStr = currentHistory.slice(-6).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
       setAgentStatus(t.chat.thinking);
       const architectSystemInstruction = `
-        You are the 'Architect' module of Kairos. 
-        CONTEXT: ${JSON.stringify(currentKnowledge)}. DATE: ${todayStr} (${currentDayName}). TIME: ${currentTimeStr}.
-        EXISTING SCHEDULE (Avoid Overlaps!): ${JSON.stringify(events.filter(e => isItemOnDate(e, todayStr)))}
+        You are the 'Architect' module of Kairos, an intelligent scheduling agent. 
+        CONTEXT: ${JSON.stringify(currentKnowledge)}. 
+        CURRENT DATE: ${todayStr} (${currentDayName}). 
+        CURRENT TIME: ${currentTimeStr}.
+        
+        EXISTING SCHEDULE (7-day window): ${JSON.stringify(relevantEvents)}
+        
         REQUEST: "${userText}"
         HISTORY: ${chatHistoryStr}
-        TASK: Determine intent ('create_event', 'create_task', 'general', 'update_prefs').
+        
+        TASK:
+        Determine intent ('create_event', 'create_task', 'general', 'update_prefs').
+        
         TIME RULES: 
-        1. endTime MUST be after startTime.
-        2. NO OVERLAP with existing schedule. If requested time is busy, suggest next available slot.
-        3. Title < 6 words.
+        1. If user says "tomorrow", use date: ${tomorrowStr}.
+        2. endTime MUST be after startTime.
+        3. NO OVERLAPS: Check the 'EXISTING SCHEDULE' carefully for the specific date the user mentions.
+           - If user wants tomorrow at 10:00, and there is a class 09:30-10:20 tomorrow, suggest the next slot (e.g., 10:30).
+        4. If requested time is busy, automatically suggest the next available free slot in the JSON response details.
+        5. Title should be concise (< 6 words).
+        
         Output JSON ONLY.
       `;
 
       const architectResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "Analyze.",
+        contents: "Analyze scheduling request and potential conflicts.",
         config: {
           systemInstruction: architectSystemInstruction,
           responseMimeType: "application/json",
@@ -208,7 +221,20 @@ const ChatView: React.FC<ChatViewProps> = ({
               intent: { type: Type.STRING, enum: ["general", "create_event", "create_task", "update_prefs"] },
               newFact: { type: Type.STRING, nullable: true },
               kairosInsight: { type: Type.OBJECT, properties: { type: { type: Type.STRING }, message: { type: Type.STRING } }, nullable: true },
-              details: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, date: { type: Type.STRING }, startTime: { type: Type.STRING }, endTime: { type: Type.STRING }, category: { type: Type.STRING }, description: { type: Type.STRING }, priority: { type: Type.STRING }, recurrence: { type: Type.STRING } }, nullable: true }
+              details: { 
+                type: Type.OBJECT, 
+                properties: { 
+                  title: { type: Type.STRING }, 
+                  date: { type: Type.STRING }, 
+                  startTime: { type: Type.STRING }, 
+                  endTime: { type: Type.STRING }, 
+                  category: { type: Type.STRING }, 
+                  description: { type: Type.STRING }, 
+                  priority: { type: Type.STRING }, 
+                  recurrence: { type: Type.STRING } 
+                }, 
+                nullable: true 
+              }
             },
             required: ["intent"]
           }
@@ -217,8 +243,20 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       const architectPlan = JSON.parse(architectResponse.text || "{}");
       setAgentStatus(t.chat.refining);
-      const editorSystemInstruction = `Kairos Assistant. User Knowledge: ${JSON.stringify(currentKnowledge)}. Architect Plan: ${JSON.stringify(architectPlan)}. Request: "${userText}". Language: ${language === 'ru' ? 'Russian' : 'English'}. Tone: ${currentKnowledge.preferences?.tone || "Professional yet warm"}. Concisely respond to the user. Output PLAIN TEXT only.`;
-      const editorResponse = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: "Generate response.", config: { systemInstruction: editorSystemInstruction, responseMimeType: "text/plain", thinkingConfig: { thinkingBudget: 0 } } });
+      const editorSystemInstruction = `
+        Kairos Assistant. 
+        User Knowledge: ${JSON.stringify(currentKnowledge)}. 
+        Architect Plan: ${JSON.stringify(architectPlan)}. 
+        Request: "${userText}". 
+        Language: ${language === 'ru' ? 'Russian' : 'English'}. 
+        Tone: ${currentKnowledge.preferences?.tone || "Professional yet warm"}. 
+        
+        INSTRUCTION: 
+        - If the Architect suggested a different time than requested because of a conflict, explain WHY (e.g., "I noticed you have a class until 10:20, so I've suggested 10:30 instead").
+        - Concisely respond to the user.
+        - Output PLAIN TEXT only.
+      `;
+      const editorResponse = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: "Generate polite and context-aware response.", config: { systemInstruction: editorSystemInstruction, responseMimeType: "text/plain", thinkingConfig: { thinkingBudget: 0 } } });
       const finalReply = editorResponse.text;
 
       if (architectPlan.newFact) onAddMemory({ text: architectPlan.newFact, timestamp: Date.now() });
@@ -273,7 +311,11 @@ const ChatView: React.FC<ChatViewProps> = ({
                 {(msg.draftTask || msg.draftEvent) && (
                   <div className="mt-4 p-4 bg-beige-soft border border-charcoal/5 text-charcoal rounded-2xl space-y-3">
                     <p className="text-[9px] font-black uppercase opacity-40">{msg.draftTask ? t.calendar.task : t.calendar.event}</p>
-                    <h4 className="font-extrabold text-charcoal">{(msg.draftTask || msg.draftEvent)?.title}</h4>
+                    <h4 className="font-extrabold text-charcoal">{msg.draftTask?.title || msg.draftEvent?.title}</h4>
+                    {/* Explicitly check for draftTask vs draftEvent properties to avoid TS error about startTime not existing on Task */}
+                    <p className="text-[10px] font-bold text-charcoal/60">
+                      {(msg.draftTask?.date || msg.draftEvent?.date)} • {msg.draftEvent ? (msg.draftEvent.startTime || '--:--') : (msg.draftTask?.time || '--:--')}
+                    </p>
                     <button onClick={() => handleAcceptDraft(msg)} disabled={msg.isSynced} className="w-full py-2.5 bg-charcoal text-cream text-[9px] font-black uppercase rounded-xl disabled:opacity-30 transition-all">{msg.isSynced ? t.chat.added : t.chat.accept}</button>
                   </div>
                 )}
