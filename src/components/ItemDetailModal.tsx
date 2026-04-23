@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Event, Task, Language } from '../types';
+import type { Event, Task, Language } from '../types';
 import { getT } from '../translations';
 
 interface ItemDetailModalProps {

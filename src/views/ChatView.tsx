@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore } from '@nanostores/react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { ChatMessage, ChatSession } from '../types';
+
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
 import { $tasks, $events, $knowledgeBase, $language, $prefs, $isAiThinking, addEvent, addTask, addMemoryItem, updateChatMessages, setMessageSynced, getLocalDateStr } from '../stores/app';

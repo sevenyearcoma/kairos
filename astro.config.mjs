@@ -1,11 +1,12 @@
 import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
-import tailwind from '@astrojs/tailwind';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  integrations: [react(), tailwind()],
+  integrations: [react()],
   output: 'static',
   vite: {
+    plugins: [tailwindcss()],
     define: {
       'process.env.API_KEY': JSON.stringify(process.env.GEMINI_API_KEY ?? ''),
       'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY ?? ''),

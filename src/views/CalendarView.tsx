@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useStore } from '@nanostores/react';
-import { Event, Task } from '../types';
+import type { Event, Task } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
 import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';

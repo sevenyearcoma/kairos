@@ -1,5 +1,5 @@
 
-import { Language } from './types';
+import type { Language } from './types';
 
 export const translations = {
   en: {

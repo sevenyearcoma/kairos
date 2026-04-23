@@ -1,6 +1,7 @@
 import { atom } from 'nanostores';
 import { persistentAtom } from '@nanostores/persistent';
 import type { Event, Task, ChatSession, ChatMessage, MemoryItem, UserPreferences, Language, Personality, KnowledgeBase, TaskPriority } from '../types';
+
 import { getT } from '../translations';
 
 const jsonCodec = { encode: JSON.stringify, decode: (v: string) => { try { return JSON.parse(v); } catch { return null; } } };

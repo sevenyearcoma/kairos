@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '@nanostores/react';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Task, Event, TaskPriority } from '../types';
+import type { Task, Event, TaskPriority } from '../types';
 import ItemDetailModal from '../components/ItemDetailModal';
 import { getT } from '../translations';
 import { isItemOnDate } from '../utils/dateUtils';

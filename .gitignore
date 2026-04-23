@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.astro
+.claude/settings.local.json
+.claude/worktrees/
 
 # Editor directories and files
 .vscode/*

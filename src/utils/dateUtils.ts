@@ -1,5 +1,5 @@
 
-import { Event, Task } from '../types';
+import type { Event, Task } from '../types';
 
 export function isItemOnDate(item: Event | Task, targetDateStr: string): boolean {
   // If explicitly set to this date
