@@ -1,13 +1,25 @@
-
 {
   "name": "kairos-assistant",
   "version": "1.0.0",
   "description": "Kairos - Kind AI Scheduling Assistant",
   "main": "server.js",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "@google/genai": "^1.50.1",
+    "express": "^4.18.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-router-dom": "^7.14.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.2"
   }
 }

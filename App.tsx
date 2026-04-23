@@ -9,113 +9,66 @@ import BottomNav from './components/BottomNav';
 import { Event, Task, ChatMessage, ChatSession, Personality, Language, MemoryItem, UserPreferences, TaskPriority, KnowledgeBase } from './types';
 import { isItemOnDate } from './utils/dateUtils';
 import { getT } from './translations';
+import * as TasksApi from './api/tasks';
+import * as EventsApi from './api/events';
+import * as ChatsApi from './api/chats';
+import * as MemoryApi from './api/memory';
+import * as KnowledgeApi from './api/knowledge';
+import * as PersonalityApi from './api/personality';
+import * as PreferencesApi from './api/preferences';
+import { getToken } from './api/client';
 
 declare const google: any;
 
-const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "1047896434184-koiits1eutpidijn3n7lj6dqb72kpigj.apps.googleusercontent.com";
 const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks";
 
-const App: React.FC = () => {
+const App: React.FC<{ onLogout?: () => void }> = ({ onLogout }) => {
   const TODAY = useMemo(() => {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
   }, []);
 
-  const [language, setLanguage] = useState<Language>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_lang');
-      return (saved === 'en' || saved === 'ru') ? saved : 'en';
-    } catch { return 'en'; }
-  });
+  const [language, setLanguage] = useState<Language>('en');
 
   const t = useMemo(() => getT(language), [language]);
 
-  const [prefs, setPrefs] = useState<UserPreferences>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_prefs');
-      return saved ? JSON.parse(saved) : {
-        userName: 'User',
-        assistantName: 'Kairos',
-        theme: 'cream',
-        onboardingComplete: false
-      };
-    } catch (e) {
-      return { userName: 'User', assistantName: 'Kairos', theme: 'cream', onboardingComplete: false };
-    }
+  const [prefs, setPrefs] = useState<UserPreferences>({
+    userName: 'User',
+    assistantName: 'Kairos',
+    theme: 'cream',
+    onboardingComplete: false
   });
 
-  const [events, setEvents] = useState<Event[]>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_events');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+  const [events, setEvents] = useState<Event[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [chats, setChats] = useState<ChatSession[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>('');
+
+  const [memory, setMemory] = useState<MemoryItem[]>([]);
+
+  const [personality, setPersonality] = useState<Personality>({
+    trust: 75,
+    respect: 65,
+    strictness: 20,
+    burnoutRisk: 15,
+    efficiency: 82
   });
 
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_tasks');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-
-  const [chats, setChats] = useState<ChatSession[]>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_chats');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-
-  const [activeChatId, setActiveChatId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_active_chat');
-      return saved || '';
-    } catch { return ''; }
-  });
-
-  const [memory, setMemory] = useState<MemoryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_memory_v2');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-
-  const [personality, setPersonality] = useState<Personality>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_personality');
-      return saved ? JSON.parse(saved) : {
-        trust: 75,
-        respect: 65,
-        strictness: 20,
-        burnoutRisk: 15,
-        efficiency: 82
-      };
-    } catch {
-       return { trust: 75, respect: 65, strictness: 20, burnoutRisk: 15, efficiency: 82 };
-    }
-  });
-  
-  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase>(() => {
-    try {
-      const saved = localStorage.getItem('kairos_knowledge_base');
-      if (saved) return JSON.parse(saved);
-    } catch (e) { console.error("KB Load Error", e); }
-    
-    return {
-      user_name: 'User',
-      core_stack: [],
-      current_projects: [],
-      interests: [],
-      preferences: {
-        tone: 'Direct, slightly witty'
-      }
-    };
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase>({
+    user_name: 'User',
+    core_stack: [],
+    current_projects: [],
+    interests: [],
+    preferences: { tone: 'Direct, slightly witty' }
   });
 
   const [isGoogleConnected, setIsGoogleConnected] = useState(() => !!localStorage.getItem('kairos_google_token'));
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem('kairos_last_sync'));
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const activeChat = useMemo(() => {
     if (!chats.length) return null;
@@ -124,6 +77,51 @@ const App: React.FC = () => {
 
   const location = useLocation();
   const tokenClient = useRef<any>(null);
+
+  // Загрузка всех данных с бэка при старте
+  useEffect(() => {
+    if (!getToken()) return;
+    Promise.allSettled([
+      TasksApi.fetchTasks(),
+      EventsApi.fetchEvents(),
+      MemoryApi.fetchMemory(),
+      KnowledgeApi.fetchKnowledgeBase(),
+      PersonalityApi.fetchPersonality(),
+      PreferencesApi.fetchPreferences(),
+      ChatsApi.fetchSessions(),
+    ]).then(([tasksRes, eventsRes, memoryRes, kbRes, personalityRes, prefsRes, chatsRes]) => {
+      if (tasksRes.status === 'fulfilled') setTasks(tasksRes.value);
+      if (eventsRes.status === 'fulfilled') setEvents(eventsRes.value);
+      if (memoryRes.status === 'fulfilled') setMemory(memoryRes.value);
+      if (kbRes.status === 'fulfilled') setKnowledgeBase(kbRes.value);
+      if (personalityRes.status === 'fulfilled') setPersonality(personalityRes.value);
+      if (prefsRes.status === 'fulfilled') {
+        setLanguage(prefsRes.value.language);
+        setPrefs(prefsRes.value.prefs);
+      }
+      if (chatsRes.status === 'fulfilled' && chatsRes.value.length > 0) {
+        setChats(chatsRes.value);
+        setActiveChatId(chatsRes.value[0].id);
+      }
+      setIsDataLoaded(true);
+    }).catch(() => { setIsDataLoaded(true); });
+  }, []);
+
+  // Синхронизируем personality/kb/prefs на бэк при изменении (если авторизован)
+  useEffect(() => {
+    if (!getToken()) return;
+    PersonalityApi.savePersonality(personality).catch(() => {});
+  }, [personality]);
+
+  useEffect(() => {
+    if (!getToken()) return;
+    KnowledgeApi.saveKnowledgeBase(knowledgeBase).catch(() => {});
+  }, [knowledgeBase]);
+
+  useEffect(() => {
+    if (!getToken()) return;
+    PreferencesApi.savePreferences(prefs, language).catch(() => {});
+  }, [prefs, language]);
 
   useEffect(() => {
     if (activeChat && activeChat.messages.length === 1 && activeChat.messages[0].role === 'assistant') {
@@ -150,12 +148,12 @@ const App: React.FC = () => {
         `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=50&singleEvents=true&orderBy=startTime`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       if (!calendarResponse.ok) {
-        if (calendarResponse.status === 401) throw new Error('Unauthorized');
+        if (calendarResponse.status === 401 || calendarResponse.status === 403) throw new Error('Unauthorized');
         throw new Error(`Calendar API Error: ${calendarResponse.status}`);
       }
-      
+
       const calendarData = await calendarResponse.json();
       const googleEvents: Event[] = (calendarData.items || []).map((item: any) => {
         const start = item.start.dateTime || item.start.date;
@@ -169,33 +167,33 @@ const App: React.FC = () => {
           date,
           startTime,
           endTime,
-          type: 'work',
-          source: 'google',
+          type: 'work' as const,
+          source: 'google' as const,
           description: item.description,
           location: item.location
         };
       });
 
       const tasksResponse = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks?maxResults=50', { headers: { Authorization: `Bearer ${token}` } });
-      
+
       if (!tasksResponse.ok) {
-         if (tasksResponse.status === 401) throw new Error('Unauthorized');
-         throw new Error(`Tasks API Error: ${tasksResponse.status}`);
+        if (tasksResponse.status === 401 || tasksResponse.status === 403) throw new Error('Unauthorized');
+        throw new Error(`Tasks API Error: ${tasksResponse.status}`);
       }
-      
+
       const tasksData = await tasksResponse.json();
       const googleTasks: Task[] = (tasksData.items || []).filter((item: any) => item.title).map((item: any) => {
         const date = item.due ? item.due.split('T')[0] : '';
-        return { 
-          id: `google-${item.id}`, 
-          externalId: item.id, 
-          title: item.title, 
-          category: 'Work', 
-          date, 
-          completed: item.status === 'completed', 
-          description: item.notes, 
-          source: 'google',
-          priority: 'normal'
+        return {
+          id: `google-${item.id}`,
+          externalId: item.id,
+          title: item.title,
+          category: 'Work',
+          date,
+          completed: item.status === 'completed',
+          description: item.notes,
+          source: 'google' as const,
+          priority: 'normal' as TaskPriority
         };
       });
 
@@ -205,7 +203,7 @@ const App: React.FC = () => {
       setLastSyncTime(now);
       localStorage.setItem('kairos_last_sync', now);
       setIsGoogleConnected(true);
-      
+
     } catch (err: any) {
       if (err.message === 'Unauthorized' || err.message.includes('Forbidden')) {
         localStorage.removeItem('kairos_google_token');
@@ -245,19 +243,17 @@ const App: React.FC = () => {
     if (token && !isSyncing) syncGoogleData(token);
   }, []);
 
-  useEffect(() => localStorage.setItem('kairos_lang', language), [language]);
-  useEffect(() => localStorage.setItem('kairos_prefs', JSON.stringify(prefs)), [prefs]);
-  useEffect(() => localStorage.setItem('kairos_events', JSON.stringify(events)), [events]);
-  useEffect(() => localStorage.setItem('kairos_tasks', JSON.stringify(tasks)), [tasks]);
-  useEffect(() => localStorage.setItem('kairos_chats', JSON.stringify(chats)), [chats]);
-  useEffect(() => localStorage.setItem('kairos_active_chat', activeChatId), [activeChatId]);
-  useEffect(() => localStorage.setItem('kairos_memory_v2', JSON.stringify(memory)), [memory]);
-  useEffect(() => localStorage.setItem('kairos_personality', JSON.stringify(personality)), [personality]);
-  useEffect(() => localStorage.setItem('kairos_knowledge_base', JSON.stringify(knowledgeBase)), [knowledgeBase]);
-
   const handleUpdateChatMessages = (chatId: string, messages: ChatMessage[], newTitle?: string) => {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, messages, title: newTitle || c.title } : c));
   };
+
+  const handleSyncChatMessages = useCallback(async (chatId: string, userMsg: ChatMessage, aiMsg: ChatMessage) => {
+    if (!getToken()) return;
+    try {
+      await ChatsApi.addMessage(chatId, 'user', userMsg.content);
+      await ChatsApi.addMessage(chatId, 'assistant', aiMsg.content);
+    } catch { /* silent — chat still works locally */ }
+  }, []);
 
   const handleSetMessageSynced = (chatId: string, messageId: string) => {
     setChats(prev => prev.map(c => {
@@ -268,6 +264,7 @@ const App: React.FC = () => {
 
   const handleAddMemoryItem = useCallback((item: MemoryItem) => {
     setMemory(prev => [item, ...prev].slice(0, 50));
+    if (getToken()) MemoryApi.createMemoryItem(item.text).catch(() => {});
   }, []);
 
   const handleSyncGoogle = useCallback(() => {
@@ -287,17 +284,25 @@ const App: React.FC = () => {
 
   const handleAddEvent = async (event: Partial<Event>) => {
     const newId = Date.now().toString();
-    const newEvent: Event = { 
-      id: newId, 
-      title: event.title || 'Untitled', 
-      date: event.date || TODAY, 
-      startTime: event.startTime || '10:00', 
-      endTime: event.endTime || '11:00', 
-      type: event.type || 'work', 
+    const newEvent: Event = {
+      id: newId,
+      title: event.title || 'Untitled',
+      date: event.date || TODAY,
+      startTime: event.startTime || '10:00',
+      endTime: event.endTime || '11:00',
+      type: event.type || 'work',
       source: 'local',
-      ...event 
+      ...event
     };
     setEvents(prev => [...prev, newEvent]);
+
+    // Фоновое сохранение на бэкенд
+    if (getToken()) {
+      EventsApi.createEvent(newEvent).then(saved => {
+        setEvents(prev => prev.map(e => e.id === newId ? { ...saved, source: 'local' } : e));
+      }).catch(() => {});
+    }
+
     if (isGoogleConnected) {
       const token = localStorage.getItem('kairos_google_token');
       if (!token) return;
@@ -328,6 +333,11 @@ const App: React.FC = () => {
   const handleDeleteEvent = async (id: string) => {
     const eventToDelete = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
+
+    if (getToken() && eventToDelete?.source !== 'google') {
+      EventsApi.deleteEvent(id).catch(() => {});
+    }
+
     if (isGoogleConnected && eventToDelete?.source === 'google' && eventToDelete.externalId) {
       const token = localStorage.getItem('kairos_google_token');
       if (token) {
@@ -346,6 +356,11 @@ const App: React.FC = () => {
     if (!event) return;
     const updatedEvent = { ...event, ...updates };
     setEvents(prev => prev.map(e => e.id === id ? updatedEvent : e));
+
+    if (getToken() && event.source !== 'google') {
+      EventsApi.updateEvent(id, updatedEvent).catch(() => {});
+    }
+
     if (isGoogleConnected && event.source === 'google' && event.externalId) {
       const token = localStorage.getItem('kairos_google_token');
       if (token) {
@@ -373,6 +388,13 @@ const App: React.FC = () => {
     const tempId = Date.now().toString();
     const newTask: Task = { id: tempId, title, category, date, completed: false, description, recurrence: recurrence || 'none', source: 'local', priority: priority || 'normal' };
     setTasks(prev => [...prev, newTask]);
+
+    if (getToken()) {
+      TasksApi.createTask(newTask).then(saved => {
+        setTasks(prev => prev.map(t => t.id === tempId ? { ...saved, category, recurrence: recurrence || 'none' } : t));
+      }).catch(() => {});
+    }
+
     if (isGoogleConnected) {
        const token = localStorage.getItem('kairos_google_token');
        if (token) {
@@ -398,6 +420,15 @@ const App: React.FC = () => {
     if (!task) return;
     const newStatus = !task.completed;
     setTasks(prev => prev.map(t => t.id === id ? {...t, completed: newStatus} : t));
+
+    if (getToken() && task.source !== 'google') {
+      if (newStatus) {
+        TasksApi.completeTask(id).catch(() => {});
+      } else {
+        TasksApi.updateTask(id, { ...task, completed: false }).catch(() => {});
+      }
+    }
+
     if (isGoogleConnected && task.source === 'google' && task.externalId) {
       const token = localStorage.getItem('kairos_google_token');
       if (token) {
@@ -415,6 +446,11 @@ const App: React.FC = () => {
   const handleDeleteTask = async (id: string) => {
     const taskToDelete = tasks.find(t => t.id === id);
     setTasks(prev => prev.filter(t => t.id !== id));
+
+    if (getToken() && taskToDelete?.source !== 'google') {
+      TasksApi.deleteTask(id).catch(() => {});
+    }
+
     if (taskToDelete && isGoogleConnected && taskToDelete.source === 'google' && taskToDelete.externalId) {
        const token = localStorage.getItem('kairos_google_token');
        if (token) {
@@ -433,6 +469,11 @@ const App: React.FC = () => {
     if (!task) return;
     const updatedTask = { ...task, ...updates };
     setTasks(prev => prev.map(t => t.id === id ? updatedTask : t));
+
+    if (getToken() && task.source !== 'google') {
+      TasksApi.updateTask(id, updatedTask).catch(() => {});
+    }
+
     if (isGoogleConnected && task.source === 'google' && task.externalId) {
       const token = localStorage.getItem('kairos_google_token');
       if (token) {
@@ -449,15 +490,23 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNewChat = () => {
-    const newId = Date.now().toString();
+  const handleNewChat = async () => {
+    const tempId = Date.now().toString();
     const currentT = getT(language);
     const initialMsg = currentT.chat.initialMsg(prefs.userName, prefs.assistantName);
-    setChats(prev => [{ id: newId, title: language === 'en' ? 'New Conversation' : 'Новый разговор', messages: [{ id: Date.now().toString(), role: 'assistant', content: initialMsg }], createdAt: Date.now() }, ...prev]);
-    setActiveChatId(newId);
+    const title = language === 'en' ? 'New Conversation' : 'Новый разговор';
+    setChats(prev => [{ id: tempId, title, messages: [{ id: `${tempId}-init`, role: 'assistant', content: initialMsg }], createdAt: Date.now() }, ...prev]);
+    setActiveChatId(tempId);
+
+    if (getToken()) {
+      ChatsApi.createSession(title).then(saved => {
+        setChats(prev => prev.map(c => c.id === tempId ? { ...c, id: saved.id } : c));
+        setActiveChatId(prev => prev === tempId ? saved.id : prev);
+      }).catch(() => {});
+    }
   };
 
-  useEffect(() => { if (chats.length === 0) handleNewChat(); }, []);
+  useEffect(() => { if (isDataLoaded && chats.length === 0) handleNewChat(); }, [isDataLoaded, chats.length]);
 
   return (
     <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
@@ -496,7 +545,7 @@ const App: React.FC = () => {
            <div className="flex items-center gap-2">
               {isGoogleConnected ? (
                 <div className="flex items-center gap-2">
-                  <button 
+                  <button
                     onClick={handleSyncGoogle}
                     disabled={isSyncing}
                     title={`${t.common.syncedAt} ${lastSyncTime || '...'}`}
@@ -509,7 +558,7 @@ const App: React.FC = () => {
                       {isSyncing ? t.common.syncing : t.common.syncNow}
                     </span>
                   </button>
-                  <button 
+                  <button
                     onClick={handleDisconnectGoogle}
                     title={t.common.disconnect}
                     className="size-9 flex items-center justify-center rounded-full bg-white border border-charcoal/10 text-charcoal/20 hover:text-red-500 hover:bg-red-50 hover:border-red-200 transition-all shadow-sm"
@@ -518,7 +567,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <button 
+                <button
                   onClick={handleSyncGoogle}
                   className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white border border-charcoal/10 text-charcoal/40 hover:text-charcoal hover:bg-charcoal/5 transition-all shadow-sm"
                 >
@@ -533,6 +582,15 @@ const App: React.FC = () => {
                  <button onClick={() => setLanguage('en')} className={`px-3 py-1 text-[10px] font-black rounded-full transition-all ${language === 'en' ? 'bg-charcoal text-cream' : 'text-charcoal/30'}`}>EN</button>
                  <button onClick={() => setLanguage('ru')} className={`px-3 py-1 text-[10px] font-black rounded-full transition-all ${language === 'ru' ? 'bg-charcoal text-cream' : 'text-charcoal/30'}`}>RU</button>
               </div>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  title="Logout"
+                  className="size-9 flex items-center justify-center rounded-full bg-white border border-charcoal/10 text-charcoal/20 hover:text-red-500 hover:bg-red-50 hover:border-red-200 transition-all shadow-sm ml-1"
+                >
+                  <span className="material-symbols-outlined text-[18px]">logout</span>
+                </button>
+              )}
            </div>
         </header>
 
@@ -540,8 +598,8 @@ const App: React.FC = () => {
           <div className="max-w-6xl mx-auto h-full">
             <Routes>
               <Route path="/" element={
-                activeChat ? <ChatView 
-                  activeChat={activeChat} 
+                activeChat ? <ChatView
+                  activeChat={activeChat}
                   chats={chats}
                   personality={personality}
                   tasks={tasks}
@@ -564,47 +622,48 @@ const App: React.FC = () => {
                   onUpdateKnowledgeBase={setKnowledgeBase}
                   onSetSynced={handleSetMessageSynced}
                   onUpdatePrefs={setPrefs}
+                  onSyncMessages={handleSyncChatMessages}
                 /> : <div className="flex items-center justify-center h-full text-[10px] font-black uppercase text-charcoal/20 animate-pulse">{t.chat.initializing}</div>
               } />
               <Route path="/calendar" element={
-                <CalendarView 
-                  events={events} 
-                  tasks={tasks} 
-                  language={language} 
+                <CalendarView
+                  events={events}
+                  tasks={tasks}
+                  language={language}
                   knowledgeBase={knowledgeBase}
                   onUpdateKnowledgeBase={setKnowledgeBase}
-                  onDeleteEvent={handleDeleteEvent} 
-                  onAddEvent={handleAddEvent} 
-                  onAddTask={handleAddTask} 
-                  onEditEvent={handleEditEvent} 
+                  onDeleteEvent={handleDeleteEvent}
+                  onAddEvent={handleAddEvent}
+                  onAddTask={handleAddTask}
+                  onEditEvent={handleEditEvent}
                   onEditTask={handleEditTask}
-                  onSyncGoogle={handleSyncGoogle} 
-                  onDisconnectGoogle={handleDisconnectGoogle} 
-                  isGoogleConnected={isGoogleConnected} 
-                  lastSyncTime={lastSyncTime} 
-                  isSyncing={isSyncing} 
+                  onSyncGoogle={handleSyncGoogle}
+                  onDisconnectGoogle={handleDisconnectGoogle}
+                  isGoogleConnected={isGoogleConnected}
+                  lastSyncTime={lastSyncTime}
+                  isSyncing={isSyncing}
                 />
               } />
               <Route path="/tasks" element={
-                <TasksView 
-                  tasks={tasks} 
-                  events={events} 
-                  personality={personality} 
-                  language={language} 
+                <TasksView
+                  tasks={tasks}
+                  events={events}
+                  personality={personality}
+                  language={language}
                   knowledgeBase={knowledgeBase}
                   onUpdateKnowledgeBase={setKnowledgeBase}
-                  onToggleTask={handleToggleTask} 
-                  onDeleteTask={handleDeleteTask} 
+                  onToggleTask={handleToggleTask}
+                  onDeleteTask={handleDeleteTask}
                   onAddTask={handleAddTask}
-                  onAddEvent={handleAddEvent} 
+                  onAddEvent={handleAddEvent}
                   onEditTask={handleEditTask}
-                  onRescheduleTask={() => {}} 
-                  onFailTask={() => {}} 
-                  onSyncGoogle={handleSyncGoogle} 
-                  onDisconnectGoogle={handleDisconnectGoogle} 
-                  isGoogleConnected={isGoogleConnected} 
-                  lastSyncTime={lastSyncTime} 
-                  isSyncing={isSyncing} 
+                  onRescheduleTask={() => {}}
+                  onFailTask={() => {}}
+                  onSyncGoogle={handleSyncGoogle}
+                  onDisconnectGoogle={handleDisconnectGoogle}
+                  isGoogleConnected={isGoogleConnected}
+                  lastSyncTime={lastSyncTime}
+                  isSyncing={isSyncing}
                 />
               } />
               <Route path="/focus" element={<FocusView tasks={tasks.filter(t => !t.completed && isItemOnDate(t, TODAY))} events={events.filter(e => isItemOnDate(e, TODAY))} language={language} onComplete={handleToggleTask} />} />

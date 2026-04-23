@@ -36,10 +36,11 @@ interface ChatViewProps {
   onUpdateKnowledgeBase: (kb: KnowledgeBase) => void;
   onSetSynced: (chatId: string, messageId: string) => void;
   onUpdatePrefs: (prefs: UserPreferences) => void;
+  onSyncMessages?: (chatId: string, userMsg: ChatMessage, aiMsg: ChatMessage) => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ 
-  activeChat, tasks, events, knowledgeBase, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onUpdateKnowledgeBase, onSetSynced, onUpdatePrefs
+const ChatView: React.FC<ChatViewProps> = ({
+  activeChat, tasks, events, knowledgeBase, language, prefs, isAiThinking, setIsAiThinking, onUpdateMessages, onAddEvent, onAddTask, onAddMemory, onUpdateKnowledgeBase, onSetSynced, onUpdatePrefs, onSyncMessages
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -138,7 +139,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (messages.length <= 1 || isAiThinking) return;
     if (window.confirm(t.chat.clearConfirm)) {
       const initialMsgContent = t.chat.initialMsg(prefs.userName, prefs.assistantName);
-      onUpdateMessages(activeChat.id, [{ id: Date.now().toString(), role: 'assistant', content: initialMsgContent }], language === 'en' ? 'New Conversation' : 'Новый разговор');
+      onUpdateMessages(activeChat.id, [{ id: `${activeChat.id}-init`, role: 'assistant', content: initialMsgContent }], language === 'en' ? 'New Conversation' : 'Новый разговор');
       setInput('');
       setAgentStatus('');
       setIsAiThinking(false);
@@ -158,7 +159,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     setIsAiThinking(true);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       let currentKnowledge = knowledgeBase;
 
       setAgentStatus(t.chat.updatingMemory);
@@ -228,6 +229,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 
       const aiMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'assistant', content: finalReply, isSynced: false, kairosInsight: architectPlan.kairosInsight, draftTask: draftTaskData, draftEvent: draftEventData };
       onUpdateMessages(activeChat.id, [...currentHistory, aiMsg]);
+      onSyncMessages?.(activeChat.id, userMsg, aiMsg);
     } catch (e: any) { 
       onUpdateMessages(activeChat.id, [...currentHistory, { id: Date.now().toString(), role: 'assistant', content: t.chat.error }]);
     } finally { setIsAiThinking(false); setAgentStatus(''); }

@@ -152,7 +152,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 />
               ) : (
                 <p className="text-sm font-bold text-charcoal">
-                  {new Date(item.date).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  {formData.date ? new Date(formData.date + 'T00:00:00').toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'}
                 </p>
               )}
             </div>

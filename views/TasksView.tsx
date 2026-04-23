@@ -225,9 +225,10 @@ const TasksView: React.FC<TasksViewProps> = ({
           if (selectedItem && 'startTime' in selectedItem) {
             // Edit event if needed
           } else {
+            setSelectedItem(prev => prev ? { ...prev, ...updates } : null);
             onEditTask(id, updates);
           }
-        }} 
+        }}
         onDelete={onDeleteTask}
         language={language} 
         initialEditMode={startInEditMode} 
