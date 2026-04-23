@@ -62,31 +62,31 @@ export interface Task {
   recurrence?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_days';
   daysOfWeek?: number[];
   dayOfMonth?: number;
-  estimatedMinutes?: number; 
+  estimatedMinutes?: number;
   source?: 'local' | 'google';
   externalId?: string;
 }
 
 export interface Personality {
-  trust: number;      
-  respect: number;    
-  strictness: number; 
-  burnoutRisk: number; 
-  efficiency: number;  
+  trust: number;
+  respect: number;
+  strictness: number;
+  burnoutRisk: number;
+  efficiency: number;
 }
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  isSynced?: boolean; 
+  isSynced?: boolean;
   draftEvent?: Partial<Event>;
   draftTask?: Partial<Task>;
-  draftReschedule?: { 
-    taskId: string; 
-    newDate: string; 
+  draftReschedule?: {
+    taskId: string;
+    newDate: string;
     reason: string;
-    isExternal?: boolean; 
+    isExternal?: boolean;
   };
   kairosInsight?: {
     type: 'warning' | 'encouragement' | 'tip';

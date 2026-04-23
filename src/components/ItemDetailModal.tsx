@@ -18,7 +18,6 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   const [formData, setFormData] = useState<any>({});
 
   const DAYS_OF_WEEK = useMemo(() => t.common.weekDays.map((label, index) => {
-    // Correct mapping for JS getDay(): Sunday is 0, Monday is 1...
     const value = index === 6 ? 0 : index + 1;
     return { label, value };
   }), [t]);
@@ -31,8 +30,8 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
 
   useEffect(() => {
     if (item) {
-      setFormData({ 
-        ...item, 
+      setFormData({
+        ...item,
         date: item.date || TODAY,
         daysOfWeek: item.daysOfWeek || [],
         dayOfMonth: item.dayOfMonth || (item.date ? new Date(item.date).getDate() : new Date().getDate())
@@ -112,7 +111,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 )}
               </div>
               {isEditing ? (
-                <input 
+                <input
                   className="text-2xl font-display font-extrabold text-charcoal leading-tight w-full bg-beige-soft border-none rounded-xl focus:ring-2 focus:ring-primary"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -144,7 +143,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
             <div className="space-y-1">
               <span className="text-[9px] font-black uppercase tracking-widest text-charcoal/30">{t.modal.startDate}</span>
               {isEditing ? (
-                <input 
+                <input
                   type="date"
                   className="text-sm font-bold text-charcoal w-full bg-beige-soft border-none rounded-lg"
                   value={formData.date}
@@ -156,7 +155,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 </p>
               )}
             </div>
-            
+
             <div className="space-y-1">
               <span className="text-[9px] font-black uppercase tracking-widest text-charcoal/30">
                 {isEvent ? t.modal.timeframe : t.modal.category}
@@ -183,7 +182,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
               <div className="space-y-1">
                 <span className="text-[9px] font-black uppercase tracking-widest text-charcoal/30">{t.modal.recurrence}</span>
                 {isEditing ? (
-                  <select 
+                  <select
                     className="text-xs font-bold text-charcoal w-full bg-beige-soft border-none rounded-lg"
                     value={formData.recurrence || 'none'}
                     onChange={(e) => setFormData({ ...formData, recurrence: e.target.value })}
@@ -202,11 +201,11 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                   </div>
                 )}
               </div>
-              
+
               {isEditing && formData.recurrence === 'monthly' && (
                 <div className="space-y-1">
                   <span className="text-[9px] font-black uppercase tracking-widest text-charcoal/30">{t.modal.dayOfMonth}</span>
-                  <input 
+                  <input
                     type="number" min="1" max="31"
                     className="text-sm font-bold text-charcoal w-full bg-beige-soft border-none rounded-lg"
                     value={formData.dayOfMonth}
@@ -241,7 +240,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
           <div className="space-y-3 pt-4 border-t border-charcoal/5">
             <span className="text-[9px] font-black uppercase tracking-widest text-charcoal/30">{t.modal.notes}</span>
             {isEditing ? (
-              <textarea 
+              <textarea
                 className="w-full bg-beige-soft border-none rounded-2xl p-5 text-sm text-charcoal focus:ring-2 focus:ring-primary min-h-[100px]"
                 value={formData.description || ''}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -262,7 +261,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
               <button onClick={handleSave} className="flex-1 py-4 bg-primary text-charcoal rounded-2xl font-bold uppercase tracking-[0.2em] text-[10px] shadow-lg hover:brightness-110 active:scale-95 transition-all">{t.modal.update}</button>
             </>
           ) : (
-            <button 
+            <button
               onClick={onClose}
               className="w-full py-4 bg-charcoal text-cream rounded-2xl font-bold uppercase tracking-[0.2em] text-[10px] shadow-lg hover:bg-charcoal/90 active:scale-95 transition-all"
             >
