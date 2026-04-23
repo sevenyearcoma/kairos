@@ -1,22 +1,27 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { Task, Event, Language } from '../types';
+import { useStore } from '@nanostores/react';
+import { isItemOnDate } from '../utils/dateUtils';
 import { getT } from '../translations';
+import { $tasks, $events, $language, toggleTask, getLocalDateStr } from '../stores/app';
 
-interface FocusViewProps {
-  tasks: Task[];
-  events: Event[];
-  language: Language;
-  onComplete: (id: string) => void;
-}
+type FocusTarget = { type: 'task' | 'event'; id: string };
 
-type FocusTarget = {
-  type: 'task' | 'event';
-  id: string;
-};
-
-const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComplete }) => {
+const FocusView: React.FC = () => {
+  const allTasks = useStore($tasks);
+  const allEvents = useStore($events);
+  const language = useStore($language);
   const t = useMemo(() => getT(language), [language]);
+
+  const TODAY = useMemo(() => getLocalDateStr(), []);
+  const tasks = useMemo(
+    () => allTasks.filter(task => !task.completed && isItemOnDate(task, TODAY)),
+    [allTasks, TODAY]
+  );
+  const events = useMemo(
+    () => allEvents.filter(e => isItemOnDate(e, TODAY)),
+    [allEvents, TODAY]
+  );
+
   const [activeTarget, setActiveTarget] = useState<FocusTarget | null>(null);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
@@ -24,7 +29,7 @@ const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComple
 
   const selectedItem = useMemo(() => {
     if (!activeTarget) return null;
-    if (activeTarget.type === 'task') return tasks.find(t => t.id === activeTarget.id);
+    if (activeTarget.type === 'task') return tasks.find(task => task.id === activeTarget.id);
     return events.find(e => e.id === activeTarget.id);
   }, [activeTarget, tasks, events]);
 
@@ -49,18 +54,18 @@ const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComple
 
   const progress = ((25 * 60 - timeLeft) / (25 * 60)) * 100;
 
-  const handleFinish = () => {
-    if (activeTarget && activeTarget.type === 'task') {
-      onComplete(activeTarget.id);
-    }
-    resetSession();
-  };
-
   const resetSession = () => {
     setActiveTarget(null);
     setTimeLeft(25 * 60);
     setIsActive(false);
     setFinished(false);
+  };
+
+  const handleFinish = () => {
+    if (activeTarget && activeTarget.type === 'task') {
+      toggleTask(activeTarget.id);
+    }
+    resetSession();
   };
 
   if (!activeTarget || !selectedItem) {
@@ -112,14 +117,14 @@ const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComple
     <div className="flex flex-col h-full items-center justify-between py-16 px-6 relative overflow-hidden">
       {finished && (
         <div className="absolute inset-0 z-50 bg-cream/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-700">
-           <h2 className="text-4xl font-display font-black text-charcoal mb-4">{t.focus.intervalComplete}</h2>
-           <p className="text-charcoal/40 mb-12 text-sm font-medium">{t.focus.takeBreath}</p>
-           <div className="flex flex-col gap-3 w-full max-w-xs">
+          <h2 className="text-4xl font-display font-black text-charcoal mb-4">{t.focus.intervalComplete}</h2>
+          <p className="text-charcoal/40 mb-12 text-sm font-medium">{t.focus.takeBreath}</p>
+          <div className="flex flex-col gap-3 w-full max-w-xs">
             {activeTarget.type === 'task' && (
               <button onClick={handleFinish} className="w-full py-5 bg-charcoal text-cream font-black uppercase tracking-widest text-[10px] rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all">{t.focus.markFinished}</button>
             )}
             <button onClick={resetSession} className="w-full py-5 border border-charcoal/10 text-charcoal/40 font-black uppercase tracking-widest text-[10px] rounded-2xl hover:text-charcoal transition-all">{t.focus.continue}</button>
-           </div>
+          </div>
         </div>
       )}
 
@@ -141,7 +146,7 @@ const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComple
           </h1>
         </div>
 
-        <div 
+        <div
           onClick={() => setIsActive(!isActive)}
           className={`text-[120px] font-display font-extralight tracking-tighter cursor-pointer transition-all duration-700 select-none ${isActive ? 'text-charcoal drop-shadow-2xl' : 'text-charcoal/10 scale-95'}`}
         >
@@ -150,11 +155,11 @@ const FocusView: React.FC<FocusViewProps> = ({ tasks, events, language, onComple
       </main>
 
       <footer className="w-full max-w-xs space-y-6">
-        <button 
+        <button
           onClick={() => setIsActive(!isActive)}
           className={`w-full py-6 rounded-[2rem] font-black uppercase tracking-[0.3em] text-[10px] transition-all duration-500 ${
-            isActive 
-              ? 'bg-charcoal text-cream shadow-2xl scale-105' 
+            isActive
+              ? 'bg-charcoal text-cream shadow-2xl scale-105'
               : 'bg-white border border-charcoal/5 text-charcoal shadow-sm hover:shadow-lg'
           }`}
         >

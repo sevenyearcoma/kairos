@@ -1,0 +1,7 @@
+---
+import Layout from '../layouts/Layout.astro';
+import TasksPage from '../components/pages/TasksPage';
+---
+<Layout title="Kairos – Matrix">
+  <TasksPage client:only="react" />
+</Layout>
