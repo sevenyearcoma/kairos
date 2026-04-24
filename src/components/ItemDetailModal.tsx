@@ -3,10 +3,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { Event, Task, Language } from '../types';
 import { getT } from '../translations';
 
+/** Merged form shape for editing either events or tasks */
+type ItemFormData = Partial<Event> & Partial<Task> & {
+  date?: string;
+  daysOfWeek?: number[];
+  dayOfMonth?: number;
+};
+
 interface ItemDetailModalProps {
   item: Event | Task | null;
   onClose: () => void;
-  onEdit?: (id: string, updates: any) => void;
+  onEdit?: (id: string, updates: ItemFormData) => void;
   onDelete?: (id: string) => void;
   language: Language;
   initialEditMode?: boolean;
@@ -15,7 +22,7 @@ interface ItemDetailModalProps {
 const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit, onDelete, language, initialEditMode = false }) => {
   const t = useMemo(() => getT(language), [language]);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<ItemFormData>({});
 
   const DAYS_OF_WEEK = useMemo(() => t.common.weekDays.map((label, index) => {
     const value = index === 6 ? 0 : index + 1;
@@ -62,7 +69,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
   const toggleDay = (dayValue: number) => {
     const current = formData.daysOfWeek || [];
     if (current.includes(dayValue)) {
-      setFormData({ ...formData, daysOfWeek: current.filter((d: number) => d !== dayValue) });
+      setFormData({ ...formData, daysOfWeek: current.filter(d => d !== dayValue) });
     } else {
       setFormData({ ...formData, daysOfWeek: [...current, dayValue] });
     }
@@ -84,18 +91,19 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
     if (formData.recurrence === 'specific_days') {
       const selectedLabels = [...(formData.daysOfWeek || [])]
         .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-        .map((d: number) => DAYS_OF_WEEK.find(day => day.value === d)?.label)
+        .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label)
         .filter(Boolean)
         .join(', ');
       return t.recurrence.weeklyLabel(selectedLabels);
     }
-    return t.recurrence[formData.recurrence as keyof typeof t.recurrence] || formData.recurrence;
+    const label = t.recurrence[formData.recurrence as keyof typeof t.recurrence];
+    return typeof label === 'string' ? label : formData.recurrence;
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-charcoal/40 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-500">
+      <div className="absolute inset-0 bg-charcoal/40 backdrop-blur-md transition-opacity" onClick={onClose}></div>
+      <div className="relative w-full max-w-lg bg-white/60 backdrop-blur-2xl border border-white/50 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden animate-in slide-in-from-bottom-8 duration-500">
         <div className="px-8 pt-8 pb-6 border-b border-charcoal/5">
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -151,7 +159,9 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                 />
               ) : (
                 <p className="text-sm font-bold text-charcoal">
-                  {new Date(item.date).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  {item.date
+                    ? new Date(item.date).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                    : '—'}
                 </p>
               )}
             </div>
@@ -185,7 +195,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onEdit
                   <select
                     className="text-xs font-bold text-charcoal w-full bg-beige-soft border-none rounded-lg"
                     value={formData.recurrence || 'none'}
-                    onChange={(e) => setFormData({ ...formData, recurrence: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, recurrence: e.target.value as Task['recurrence'] })}
                   >
                     <option value="none">{t.recurrence.none}</option>
                     <option value="daily">{t.recurrence.daily}</option>

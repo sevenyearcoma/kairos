@@ -7,13 +7,34 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & build output
 node_modules
 dist
 dist-ssr
 *.local
 .astro
-.claude/settings.local.json
-.claude/worktrees/
+*.tsbuildinfo
+
+# Secrets & env
+.env
+.env.*
+!.env.example
+
+# Claude / agent tooling
+.claude/
+.stitch/
+AGENTS.md
+
+# Expo / React Native
+.expo/
+mobile/expo-dev*.log
+mobile/expo-dev*.err.log
+mobile/expo-web*.log
+mobile/expo-web*.err.log
+
+# Supabase CLI local state
+supabase/.branches/
+supabase/.temp/
 
 # Editor directories and files
 .vscode/*

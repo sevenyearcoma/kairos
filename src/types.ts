@@ -47,6 +47,8 @@ export interface Event {
 }
 
 export type TaskPriority = 'urgent' | 'high' | 'normal' | 'low';
+export type TaskBucket = 'today' | 'later';
+export type EnergyLevel = 'low' | 'ok' | 'sharp';
 
 export interface Task {
   id: string;
@@ -55,8 +57,11 @@ export interface Task {
   time?: string;
   category: string;
   completed: boolean;
+  touched?: boolean; // partial-progress credit
   failed?: boolean;
-  priority: TaskPriority;
+  priority?: TaskPriority; // legacy, kept for back-compat
+  bucket?: TaskBucket;
+  energy?: EnergyLevel;
   rescheduleCount?: number;
   description?: string;
   recurrence?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_days';

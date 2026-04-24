@@ -1,20 +1,31 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-cream: #FDFCF7;
-  --color-charcoal: #1A1A1A;
-  --color-emerald-muted: #4B7C68;
-  --color-primary: #11d4b4;
-  --color-beige-soft: #fdfaf3;
+  --color-cream: #F3EEE6;
+  --color-charcoal: #2C2822;
+  --color-emerald-muted: #789280;
+  --color-primary: #7A9B86;
+  --color-beige-soft: #EAE3D6;
+  --color-paper-edge: #DED5C8;
+  --color-muted-ink: #8E8273;
+  --color-sage-deep: #5F7C6A;
 
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-display: Manrope, ui-sans-serif, system-ui, sans-serif;
+  --font-display: Newsreader, Georgia, "Times New Roman", serif;
 
   --animate-pulse-gentle: pulse-gentle 3s infinite ease-in-out;
+  --animate-breathe-slow: breathe-slow 8s infinite ease-in-out;
 
   @keyframes pulse-gentle {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
+  }
+
+  @keyframes breathe-slow {
+    0%, 100% { transform: scale(0.95); opacity: 0.6; }
+    50% { transform: scale(1.05); opacity: 1; }
   }
 }
 
@@ -31,4 +42,64 @@
 .ios-blur {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+}
+
+body {
+  background:
+    radial-gradient(circle at 65% 20%, rgba(255,255,255,0.28), transparent 34%),
+    radial-gradient(circle at 80% 90%, rgba(122,155,134,0.08), transparent 28%),
+    var(--color-cream);
+  color: var(--color-charcoal);
+  transition: background-color 400ms ease, color 400ms ease;
+}
+
+/* Dark mode: warm, low-contrast. Overrides the @theme tokens so all
+   `bg-cream`/`text-charcoal`/`text-primary` utilities swap automatically. */
+.dark {
+  --color-cream: #1F1B17;
+  --color-charcoal: #E8E2D5;
+  --color-emerald-muted: #8FB39E;
+  --color-primary: #8FB39E;
+  --color-beige-soft: #2A241F;
+  --color-paper-edge: #3A332C;
+  --color-muted-ink: #948B7E;
+  --color-sage-deep: #A5BFAE;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 65% 20%, rgba(255,255,255,0.02), transparent 34%),
+    radial-gradient(circle at 80% 90%, rgba(143,179,158,0.05), transparent 28%),
+    #1F1B17;
+}
+
+.dark .stitch-card {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(232, 226, 213, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.dark .paper-texture::after {
+  opacity: 0.02;
+  background-image: radial-gradient(#E8E2D5 0.6px, transparent 0.6px);
+}
+
+button, a, input, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stitch-card {
+  background: rgba(255, 255, 255, 0.40);
+  border: 1px solid rgba(181, 168, 149, 0.28);
+  box-shadow: 0 1px 2px rgba(44, 40, 34, 0.03);
+}
+
+.paper-texture::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: radial-gradient(#8E8273 0.6px, transparent 0.6px);
+  background-size: 28px 28px;
 }

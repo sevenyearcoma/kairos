@@ -1,6 +1,6 @@
 import { atom } from 'nanostores';
 import { persistentAtom } from '@nanostores/persistent';
-import type { Event, Task, ChatSession, ChatMessage, MemoryItem, UserPreferences, Language, Personality, KnowledgeBase, TaskPriority } from '../types';
+import type { Event, Task, ChatSession, ChatMessage, MemoryItem, UserPreferences, Language, Personality, KnowledgeBase, TaskPriority, TaskBucket, EnergyLevel } from '../types';
 
 import { getT } from '../translations';
 
@@ -23,6 +23,8 @@ export const $knowledgeBase = persistentAtom<KnowledgeBase>('kairos_knowledge_ba
   preferences: { tone: 'Direct, slightly witty' },
 }, jsonCodec);
 
+export const $energy = persistentAtom<{ level: EnergyLevel | null; setAt: number }>('kairos_energy', { level: null, setAt: 0 }, jsonCodec);
+
 export const $isGoogleConnected = atom(false);
 export const $lastSyncTime = atom<string | null>(null);
 export const $isSyncing = atom(false);
@@ -36,6 +38,16 @@ export function initTransientState() {
 export function getLocalDateStr(): string {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+}
+
+/** Centralized sync-or-auth action. Used by Header and CalendarView. */
+export function requestGoogleSync() {
+  const token = localStorage.getItem('kairos_google_token');
+  if (token) {
+    syncGoogleData(token);
+  } else if ((window as any).__kairosRequestGoogleAuth) {
+    (window as any).__kairosRequestGoogleAuth();
+  }
 }
 
 export function createNewChat() {
@@ -142,9 +154,9 @@ export async function editEvent(id: string, updates: Partial<Event>) {
   }
 }
 
-export async function addTask(title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority) {
+export async function addTask(title: string, category: string, date: string, description?: string, recurrence?: Task['recurrence'], priority?: TaskPriority, bucket: TaskBucket = 'today', energy?: EnergyLevel) {
   const tempId = Date.now().toString();
-  $tasks.set([...$tasks.get(), { id: tempId, title, category, date, completed: false, description, recurrence: recurrence || 'none', source: 'local', priority: priority || 'normal' }]);
+  $tasks.set([...$tasks.get(), { id: tempId, title, category, date, completed: false, description, recurrence: recurrence || 'none', source: 'local', priority: priority || 'normal', bucket, energy }]);
   if (!$isGoogleConnected.get()) return;
   const token = localStorage.getItem('kairos_google_token');
   if (token) {
@@ -216,8 +228,10 @@ export async function editTask(id: string, updates: Partial<Task>) {
 export async function syncGoogleData(token: string) {
   $isSyncing.set(true);
   try {
+    const timeMin = new Date();
+    timeMin.setMonth(timeMin.getMonth() - 1);
     const calRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=50&singleEvents=true&orderBy=startTime`,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin.toISOString()}&maxResults=250&singleEvents=true&orderBy=startTime`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!calRes.ok) {

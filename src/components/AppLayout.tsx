@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { useStore } from '@nanostores/react';
-import { $prefs, $language, syncGoogleData, initTransientState } from '../stores/app';
-import { getT } from '../translations';
+import { $isGoogleConnected, $language, $prefs } from '../stores/app';
+import { syncGoogleData, initTransientState } from '../stores/app';
 import BottomNav from './BottomNav';
 import Header from './Header';
+import { getT } from '../translations';
 
 declare const google: any;
 const GOOGLE_CLIENT_ID = "1069276372995-f4l3c28vafgmikmjm5ng0ucrh0epv4ms.apps.googleusercontent.com";
@@ -15,10 +16,11 @@ interface AppLayoutProps {
 }
 
 const AppLayout: React.FC<AppLayoutProps> = ({ currentPath, children }) => {
-  const prefs = useStore($prefs);
-  const language = useStore($language);
-  const t = React.useMemo(() => getT(language), [language]);
   const tokenClient = useRef<any>(null);
+  const isGoogleConnected = useStore($isGoogleConnected);
+  const language = useStore($language);
+  const prefs = useStore($prefs);
+  const t = useMemo(() => getT(language), [language]);
 
   useEffect(() => {
     initTransientState();
@@ -56,50 +58,71 @@ const AppLayout: React.FC<AppLayoutProps> = ({ currentPath, children }) => {
     };
   });
 
-  const navItems = [
-    { label: t.nav.secretary, icon: 'chat_bubble', path: '/' },
-    { label: t.nav.calendar, icon: 'calendar_today', path: '/calendar' },
-    { label: t.nav.tasks, icon: 'task_alt', path: '/tasks' },
-    { label: t.nav.focus, icon: 'target', path: '/focus' },
+  useEffect(() => {
+    const root = document.documentElement;
+    if (prefs.theme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
+  }, [prefs.theme]);
+
+  const desktopNavItems = [
+    { label: 'today', icon: 'calendar_today', path: '/tasks' },
+    { label: 'capture', icon: 'mic', path: '/' },
+    { label: 'focus', icon: 'timer', path: '/focus' },
+    { label: 'calendar', icon: 'calendar_view_week', path: '/calendar' },
   ];
 
   return (
-    <div className="flex h-screen w-full bg-cream text-charcoal overflow-hidden">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-72 border-r border-charcoal/5 bg-white/50 sticky top-0 h-screen p-8 shrink-0 overflow-y-auto scrollbar-hide">
-        <div className="flex items-center gap-3 mb-12">
-          <div className="size-10 bg-charcoal rounded-xl flex items-center justify-center text-primary shadow-2xl">
-            <span className="material-symbols-outlined text-xl">hourglass_empty</span>
+    <div className="paper-texture flex min-h-screen w-full justify-center bg-cream text-charcoal overflow-hidden transition-colors duration-400 md:block">
+      <main className="relative flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-cream shadow-[0_30px_90px_rgba(52,43,34,0.18)] transition-colors duration-400 md:h-screen md:max-w-none md:rounded-none md:shadow-none">
+        <aside className="hidden fixed left-0 top-0 z-40 h-screen w-64 border-r border-paper-edge/70 bg-cream px-6 py-8 md:flex md:flex-col">
+          <div className="mb-12 px-2">
+            <p className="font-display text-2xl font-medium leading-none text-sage-deep">kairos</p>
+            <p className="mt-2 font-display text-lg font-medium leading-none text-muted-ink">breathe and begin</p>
           </div>
-          <span className="font-display font-black text-2xl tracking-tighter uppercase">{prefs.assistantName}</span>
-        </div>
-        <nav className="flex-1 space-y-2">
-          {navItems.map(item => (
-            <a
-              key={item.path}
-              href={item.path}
-              className={`flex items-center gap-4 px-5 py-4 rounded-2xl text-[12px] font-extrabold uppercase tracking-widest transition-all ${
-                currentPath === item.path
-                  ? 'bg-charcoal text-cream shadow-xl'
-                  : 'text-charcoal/40 hover:bg-charcoal/5 hover:text-charcoal'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </aside>
 
-      {/* Main */}
-      <main className="flex-1 min-w-0 flex flex-col relative bg-white/30 h-[100dvh] overflow-hidden">
+          <nav className="flex-1 space-y-2">
+            {desktopNavItems.map((item) => {
+              const active = currentPath === item.path;
+              return (
+                <a
+                  key={item.path}
+                  href={item.path}
+                  className={`group flex items-center gap-4 rounded-lg px-4 py-3 text-lg transition duration-500 ${
+                    active ? 'border-r-2 border-primary/70 text-sage-deep' : 'text-muted-ink hover:bg-beige-soft/45'
+                  }`}
+                >
+                  <span
+                    className="material-symbols-outlined text-[21px]"
+                    style={{ fontVariationSettings: `'FILL' ${active ? 1 : 0}, 'wght' 300, 'GRAD' 0, 'opsz' 24` }}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="font-display font-medium">{item.label}</span>
+                </a>
+              );
+            })}
+          </nav>
+
+          <div className="mt-auto flex items-center gap-3 px-2">
+            <div className="flex size-10 items-center justify-center overflow-hidden rounded-full bg-paper-edge text-sage-deep">
+              <span className="material-symbols-outlined text-[21px]">person</span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-charcoal">{prefs.userName.toLowerCase()}</p>
+              <p className="text-xs text-muted-ink">{isGoogleConnected ? t.calendar.linked : 'quiet mode on'}</p>
+            </div>
+          </div>
+        </aside>
+
+        <section className="flex min-w-0 flex-col overflow-hidden md:ml-64 md:h-screen">
         <Header currentPath={currentPath} />
-        <div className="flex-1 overflow-y-auto p-4 md:p-12 pb-32 md:pb-12 scrollbar-hide">
-          <div className="max-w-6xl mx-auto h-full">
+        <div className="flex-1 overflow-y-auto px-4 pb-28 pt-3 scrollbar-hide md:px-12 md:pb-20 md:pt-10">
+          <div className="mx-auto h-full max-w-[390px] md:max-w-none">
             {children}
           </div>
         </div>
         <BottomNav currentPath={currentPath} />
+        </section>
       </main>
     </div>
   );
